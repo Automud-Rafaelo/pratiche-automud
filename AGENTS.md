@@ -2,7 +2,7 @@
 
 ## Scopo
 
-Automud S.r.l. acquista auto incidentate da privati. Dopo che un commerciale ha concordato il prezzo, il cliente riceve via WhatsApp un link a una web app. Con il minimo intervento umano, il cliente deve completare i dati per il pagamento, scegliere l'agenzia per il passaggio di proprietà, prenotare l'appuntamento e fornire i dati necessari al ritiro con carro attrezzi.
+Automud S.r.l. acquista auto incidentate da privati. Dopo che un commerciale ha concordato il prezzo, il cliente riceve via WhatsApp un link a una web app. Con il minimo intervento umano, il cliente completa i dati per il pagamento, sceglie l'agenzia per il passaggio di proprietà, indica una preferenza per l'appuntamento e fornisce i dati necessari al ritiro con carro attrezzi.
 
 Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
 
@@ -27,48 +27,46 @@ Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
 - TypeScript
 - Tailwind CSS
 - Supabase Postgres tramite `@supabase/supabase-js`
-- Google Maps Platform: Places API e Geocoding API, esclusivamente lato server
+- Google Maps Platform: Places API (New) e Geocoding API, esclusivamente lato server
 - Deploy su Vercel
 
-## Ambito dell'inizializzazione
-
-Questo task crea soltanto lo scaffolding Next.js, lo schema Supabase, la configurazione delle regole, la documentazione e l'esempio delle variabili d'ambiente. Non implementa le schermate del flusso cliente, il pannello admin, gli endpoint, le server action, l'import CSV o le chiamate Google Maps.
-
-## Attori
+## Attori e responsabilità
 
 ### Cliente
 
-Privato che vende l'auto. Non crea un account e usa esclusivamente il link ricevuto, principalmente da smartphone.
+È il privato che vende l'auto. Non crea un account e usa esclusivamente il link ricevuto, principalmente da smartphone. Compila l'intero flusso senza interruzioni e senza vedere o conoscere le verifiche interne.
 
 ### Operatore Automud
 
-Commerciale che usa il pannello admin per creare pratiche, controllarne lo stato, eseguire verifiche manuali e importare le agenzie.
+È il commerciale che usa il pannello admin per creare e consultare le pratiche, eseguire le cinque verifiche dopo la compilazione del cliente, comunicare eventuali anomalie, concordare e registrare l'appuntamento reale e importare le agenzie.
 
 ## Accesso e sicurezza
 
 - Il link cliente ha forma `/p/[token]`.
 - Il token è casuale, non indovinabile, URL-safe e lungo almeno 32 caratteri.
-- Non esporre mai l'UUID `pratiche.id` nell'URL.
+- Non esporre mai l'UUID `pratiche.id` nell'URL cliente.
 - Il cliente non usa autenticazione: il token è l'unico titolo di accesso alla singola pratica.
-- Il pannello `/admin` usa una password semplice contenuta in `ADMIN_PASSWORD`.
-- `GOOGLE_MAPS_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` e `ADMIN_PASSWORD` devono essere usate solo lato server.
-- Lo schema iniziale abilita RLS senza policy pubbliche. Finché non viene definito un modello RLS sicuro basato sul token, le operazioni del cliente devono passare da route handler o server action che validano il token e usano la service role key sul server.
+- Il pannello `/admin` usa la password contenuta in `ADMIN_PASSWORD`.
+- Una login admin riuscita crea un cookie httpOnly firmato, con durata di 12 ore.
+- La login accetta al massimo cinque tentativi falliti per IP in una finestra di 15 minuti.
+- Tutte le route sotto `/admin`, esclusa `/admin/login`, verificano la sessione.
+- Tutte le operazioni admin sono server-side e usano `SUPABASE_SERVICE_ROLE_KEY`; il browser non comunica mai direttamente con Supabase.
+- `GOOGLE_MAPS_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` e `ADMIN_PASSWORD` devono essere usate soltanto lato server.
+- Lo schema abilita RLS senza policy pubbliche. Anche il futuro flusso cliente deve passare da route handler o server action che validano il token.
 - Non registrare token, password, IBAN, codice fiscale o altre informazioni sensibili nei log applicativi.
 
 ## Stati della pratica
 
 Il campo `pratiche.status` ammette soltanto:
 
-- `creata`: l'operatore ha creato la pratica; il link non è ancora stato aperto.
-- `step1_dati`: il cliente sta inserendo i dati personali.
-- `in_verifica`: lo step 1 è completo e il cliente attende le verifiche dell'operatore.
-- `bloccata`: una verifica bloccante è fallita; il cliente vede che verrà ricontattato dal commerciale e non può proseguire.
-- `step2_agenzia`: le verifiche sono state superate e il cliente sceglie l'agenzia.
-- `step3_appuntamento`: il cliente organizza l'appuntamento.
-- `step4_ritiro`: il cliente inserisce i dati per il ritiro.
-- `completata`: il flusso è terminato.
+- `creata`: l'operatore ha creato la pratica e il link non è ancora stato aperto;
+- `step1_dati`: il cliente sta inserendo i dati personali;
+- `step2_agenzia`: il cliente sceglie l'agenzia;
+- `step3_appuntamento`: il cliente indica una preferenza per l'appuntamento;
+- `step4_ritiro`: il cliente inserisce i dati per il ritiro;
+- `completata`: il cliente ha terminato il flusso.
 
-Ogni cambio di stato e ogni azione rilevante deve produrre una riga in `eventi`.
+Lo step 1 passa direttamente a `step2_agenzia`. Le verifiche non modificano lo stato e non possono bloccare il cliente. Ogni cambio di stato e ogni azione rilevante produce una riga in `eventi`.
 
 ## Flusso cliente di riferimento
 
@@ -86,28 +84,11 @@ Mostrare una domanda per schermata:
 2. cognome;
 3. codice fiscale, con validazione del formato italiano;
 4. IBAN, con validazione del formato IBAN;
-5. conferma della targa, con validazione del formato italiano.
+5. conferma della targa mostrata dall'applicazione.
 
-Al completamento impostare lo stato su `in_verifica` e mostrare una schermata di attesa.
+Il cliente non digita la targa. Sceglie “Confermo” oppure “Non è la mia targa”. Nel secondo caso registrare un evento `targa_contestata`, evidenziarlo nel pannello admin e lasciare proseguire la pratica. Al completamento dello step impostare direttamente `step2_agenzia`.
 
-### Verifiche operatore
-
-L'operatore compila cinque verifiche, inizialmente `null` per indicare “non ancora verificato”.
-
-Verifiche bloccanti:
-
-- corrispondenza dell'intestatario;
-- chilometri scalati;
-- fermo amministrativo.
-
-Se una verifica bloccante fallisce, impostare `bloccata`. Il cliente non può proseguire e vede il messaggio “Ti ricontatterà il commerciale”.
-
-Verifiche informative:
-
-- CDP cartaceo: se presente, nello step successivo mostrare “Porta il CDP in agenzia”.
-- revisione scaduta: mostrare l'avviso solo quando `tipo_pratica = 'atto_demo'`.
-
-Quando tutte e cinque le verifiche sono non nulle e nessuna bloccante richiede il blocco, impostare `step2_agenzia`.
+La targa viene validata quando l'operatore crea la pratica. Normalizzarla in maiuscolo rimuovendo spazi e trattini. Se non rispetta il formato moderno `AA123AA`, mostrare un avviso ma consentire il salvataggio.
 
 ### Step 2 — Agenzia
 
@@ -117,16 +98,23 @@ Chiedere:
 2. se l'auto è cointestata; in caso affermativo avvisare che tutti i cointestatari devono essere presenti in agenzia;
 3. se sono disponibili due chiavi.
 
-Geocodificare il CAP passando prima da `cap_coordinate`. Mostrare fino a quattro agenzie attive entro 25 km, ordinate per distanza e senza preferenze ulteriori. Per ogni agenzia mostrare nome, indirizzo, distanza e telefono. La distanza tra CAP e agenzia si calcola localmente con la formula di Haversine.
+Geocodificare il CAP passando prima da `cap_coordinate`. Mostrare fino a quattro agenzie attive entro 25 km, ordinate per distanza e senza preferenze ulteriori. Per ogni agenzia mostrare nome, indirizzo, distanza e telefono. La distanza si calcola localmente con Haversine.
 
-### Step 3 — Appuntamento
+Se non esistono agenzie entro 25 km, mostrare comunque le quattro agenzie attive più vicine, rendere evidente la distanza e registrare l'evento `nessuna_agenzia_nel_raggio`.
 
-Chiedere “Chi sta compilando è il proprietario?”.
+### Step 3 — Preferenza appuntamento
 
-- Se sì, mostrare il calendario.
-- Se no, chiedere “Conosci gli orari del proprietario?”. Se sì, mostrare il calendario. Se no, mostrare “Ci sentiamo su WhatsApp entro domani per l'orario” e mantenere la pratica in `step3_appuntamento`.
+Il testo introduttivo è: “Quando preferiresti andare in agenzia? Ti confermeremo noi l'appuntamento”. La selezione del cliente è una preferenza, non un appuntamento confermato.
 
-Il calendario consente di scegliere tra i prossimi sei giorni a partire da oggi e poi tra `mattina` e `pomeriggio`.
+Se `is_proprietario = true`, mostrare il calendario. Se `is_proprietario = false`, chiedere “Conosci gli orari del proprietario?”. Se la risposta è sì, mostrare il calendario. Se la risposta è no, mostrare “Ci sentiamo su WhatsApp per concordare l'orario”, lasciare `preferenza_data` a `null` e proseguire allo step 4.
+
+Regole del calendario, calcolate lato server nel fuso `Europe/Rome`:
+
+- offrire sempre esattamente tre giorni selezionabili a partire da oggi;
+- non offrire mai la domenica; saltarla e aggiungere il giorno successivo per mantenere tre opzioni;
+- dopo le 18:00 non offrire oggi e partire da domani;
+- dopo le 12:00 e fino alle 18:00 offrire oggi soltanto con la fascia `pomeriggio`;
+- negli altri giorni offrire `mattina` e `pomeriggio`.
 
 ### Step 4 — Ritiro
 
@@ -140,7 +128,25 @@ Mostrare una spiegazione finale:
 - se l'auto è in deposito o carrozzeria non serve la presenza del cliente, ma il cliente deve avvisare la struttura;
 - il carro attrezzi contatterà il cliente entro 24 ore.
 
-Impostare quindi lo stato su `completata`.
+Impostare quindi lo stato su `completata`. Le verifiche e la conferma dell'appuntamento avvengono successivamente e non sono visibili nel flusso cliente.
+
+## Verifiche dell'operatore
+
+Le cinque verifiche sono tutte informative per l'operatore e non producono transizioni di stato. La semantica uniforme è:
+
+- `true`: anomalia rilevata;
+- `false`: verificato, nessuna anomalia;
+- `null`: non ancora verificato.
+
+I campi sono:
+
+- `check_intestatario_non_corrisponde`;
+- `check_cdp_cartaceo`;
+- `check_revisione_scaduta`;
+- `check_km_scalati`;
+- `check_fermo_amministrativo`.
+
+Quando l'operatore dichiara conclusa l'attività, valorizza `verifiche_completate_at`. Eventuali indicazioni su CDP cartaceo, revisione scaduta o altre anomalie vengono comunicate al cliente a voce o su WhatsApp, mai durante il flusso web.
 
 ## Persistenza e ripresa
 
@@ -149,23 +155,53 @@ Impostare quindi lo stato su `completata`.
 - Le operazioni di salvataggio devono essere idempotenti quando possibile.
 - Le transizioni di stato devono essere validate lato server; il browser non può impostare liberamente uno stato.
 
-## Pannello admin di riferimento
+## Pannello admin
 
-Il pannello non è ancora implementato. Sarà disponibile su `/admin`, protetto dalla password in `ADMIN_PASSWORD`, e dovrà consentire di:
+È uno strumento interno per due o tre operatori. Usa soltanto tabelle, form, bottoni e Tailwind di base; non richiede una UI elaborata.
 
-- creare una pratica con tipo, prezzo, targa, marca e modello e ottenere il link cliente;
-- vedere la lista delle pratiche con il relativo stato;
-- vedere il dettaglio con tutti i dati del cliente;
-- compilare i cinque toggle delle verifiche;
-- consultare il log eventi;
-- modificare le note dell'operatore.
+### `/admin/login`
 
-La pagina `/admin/import-agenzie` dovrà leggere un CSV presente nella repository, inserire le agenzie e interrogare Google Places per latitudine, longitudine, `google_place_id` e orari. Dovrà aggiornare `import_status` e poter essere rilanciata senza creare duplicati.
+Form con la sola password. Alla riuscita crea il cookie di sessione e reindirizza a `/admin`.
+
+### `/admin`
+
+Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome del cliente se presenti, stato, data di creazione e tre indicatori: verifiche completate, appuntamento confermato ed eventi da attenzionare (`targa_contestata` o `nessuna_agenzia_nel_raggio`). Include il filtro “Da verificare”, definito come pratiche `completata` con `verifiche_completate_at` nullo, e il bottone “Nuova pratica”.
+
+### `/admin/pratiche/nuova`
+
+Form con `tipo_pratica`, `prezzo_concordato`, `targa`, `marca` e `modello`. Normalizza la targa e segnala senza bloccare un formato diverso da `AA123AA`. Al salvataggio genera il token e mostra il link completo `/p/[token]`, costruito usando `NEXT_PUBLIC_APP_URL`, con un bottone “Copia link”.
+
+### `/admin/pratiche/[id]`
+
+Mostra:
+
+- riepilogo dei dati operatore e link cliente;
+- dati cliente in sola lettura, raggruppati per step, usando “—” per i valori mancanti;
+- cinque verifiche a tre stati con etichette italiane e il bottone “Verifiche completate”;
+- preferenza del cliente, agenzia scelta con telefono ed email, data e fascia dell'appuntamento confermato modificabili;
+- note operatore modificabili;
+- log eventi in ordine cronologico inverso.
+
+Ogni salvataggio dell'operatore genera un evento.
+
+### `/admin/import-agenzie`
+
+Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indirizzo`, `cap`, `comune`, `provincia`, `lat`, `lng`, `maps_url`.
+
+- Deduplicare su nome e CAP normalizzati: minuscolo e spazi collassati. Il CSV non contiene un ID.
+- Inserire o aggiornare ogni riga tramite upsert.
+- Se latitudine e longitudine sono già presenti, usarle senza chiamare Places e impostare `import_status = 'ok'`.
+- Per ogni riga `pending` senza coordinate, chiamare Google Places API (New), Text Search, con nome e indirizzo e salvare latitudine, longitudine, `google_place_id` e orari.
+- Se nessun risultato è trovato, impostare `import_status = 'not_found'`.
+- Salvare ogni riga singolarmente, così un'importazione interrotta riprende dalle righe `pending`.
+- Se `GOOGLE_MAPS_API_KEY` manca, inserire o aggiornare le righe, mantenerle `pending` e mostrare un messaggio chiaro.
+- Un'agenzia è `attiva` soltanto se possiede un telefono; l'email è facoltativa.
+- La pagina mostra le agenzie e permette di attivarle o disattivarle, rispettando il vincolo del telefono.
 
 ## Google Maps Platform
 
 - Usare `GOOGLE_MAPS_API_KEY` solo in route handler o server action.
-- Usare Places API soltanto durante l'import delle agenzie dal pannello admin.
+- Usare Places API (New), Text Search, soltanto durante l'import delle agenzie.
 - Usare Geocoding API soltanto per ottenere le coordinate del CAP inserito dal cliente.
 - Consultare sempre `cap_coordinate` prima del geocoding. Chiedere un CAP a Google al massimo una volta e poi usare la cache.
 - Calcolare la distanza agenzia–CAP localmente con Haversine.
@@ -181,22 +217,23 @@ La pagina `/admin/import-agenzie` dovrà leggere un CSV presente nella repositor
 - `status`: uno degli stati definiti sopra.
 - `tipo_pratica`: `dini` oppure `atto_demo`, inserito dall'operatore.
 - `prezzo_concordato`: numerico, inserito dall'operatore.
-- `targa`, `marca`, `modello`: testo, inserito dall'operatore; il cliente vede i dati e conferma la targa.
-- Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `cap`, `cointestata`, `due_chiavi`, `agenzia_id`, `appuntamento_data`, `appuntamento_fascia`, `compila_proprietario`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `telefono_ritiro`.
-- Verifiche nullable: `check_match_intestatario`, `check_cdp_cartaceo`, `check_revisione_scaduta`, `check_km_scalati`, `check_fermo_amministrativo`.
-- `note_operatore`: testo nullable.
+- `targa`, `marca`, `modello`: testo, inserito dall'operatore; il cliente vede i dati e conferma o contesta la targa.
+- Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `cap`, `cointestata`, `due_chiavi`, `agenzia_id`, `preferenza_data`, `preferenza_fascia`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `telefono_ritiro`.
+- Verifiche nullable con semantica anomalia/ok/non verificato: `check_intestatario_non_corrisponde`, `check_cdp_cartaceo`, `check_revisione_scaduta`, `check_km_scalati`, `check_fermo_amministrativo`.
+- Campi operatore nullable: `appuntamento_confermato_data`, `appuntamento_confermato_fascia`, `verifiche_completate_at`, `note_operatore`.
 
 ### `agenzie`
 
 - `id`: UUID, chiave primaria.
 - `nome`, `indirizzo`, `cap`, `comune`, `provincia`: testo importato dal CSV.
-- `telefono`, `email`: testo.
-- `lat`, `lng`: numerici nullable, ottenuti tramite Places.
-- `google_place_id`: testo nullable.
+- `nome_normalizzato`, `cap_normalizzato`: campi generati usati come chiave univoca per l'upsert.
+- `telefono`: testo nullable; senza telefono l'agenzia non può essere attiva.
+- `email`: testo facoltativo.
+- `lat`, `lng`: numerici nullable, provenienti dal CSV o da Places.
+- `maps_url`, `google_place_id`: testo nullable.
 - `orari`: JSONB nullable ottenuto tramite Places e non mostrato nella v1.
-- `attiva`: booleano, default `true`.
+- `attiva`: booleano, consentito soltanto quando il telefono è presente.
 - `import_status`: `pending`, `ok` oppure `not_found`.
-- Lo schema iniziale usa `(nome, indirizzo, cap)` come identità univoca per rendere l'import ripetibile.
 
 ### `cap_coordinate`
 
@@ -206,13 +243,30 @@ Cache del geocoding: `cap` è la chiave primaria; `lat` e `lng` sono numerici; `
 
 Log di debug e amministrazione: `id`, `pratica_id`, `created_at`, `tipo` e `dettaglio` JSONB. Gli eventi vengono eliminati a cascata se viene eliminata la pratica.
 
+Eventi da evidenziare nella lista admin: `targa_contestata` e `nessuna_agenzia_nel_raggio`.
+
+## Regole di business centralizzate
+
+`src/lib/config/business-rules.ts` è l'unica fonte applicativa per:
+
+- stati, tipi pratica, fasce e ubicazioni consentiti;
+- semantica e nomi delle verifiche;
+- normalizzazione e validazione non bloccante della targa;
+- raggio di 25 km, massimo quattro agenzie e fallback alle quattro più vicine;
+- calendario a tre giorni, esclusione domenica, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
+- durata e rate limit della sessione admin;
+- normalizzazione della chiave di deduplicazione delle agenzie.
+
 ## Variabili d'ambiente
 
+- `NEXT_PUBLIC_APP_URL`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `GOOGLE_MAPS_API_KEY`
 - `ADMIN_PASSWORD`
+
+`ADMIN_PASSWORD` viene usata anche come segreto per firmare il cookie del prototipo e deve quindi essere lunga e non riutilizzata altrove.
 
 ## Stato di avanzamento
 
@@ -222,10 +276,11 @@ Completato:
 
 - scaffolding Next.js App Router con TypeScript, Tailwind CSS ed ESLint;
 - dipendenza `@supabase/supabase-js`;
-- configurazione centralizzata iniziale delle regole di business;
-- migration iniziale con tabelle, vincoli, indici, token casuale, trigger `updated_at` e RLS;
-- `.env.example`;
-- istruzioni locali, Supabase e Vercel in `README.md`.
+- specifica aggiornata al flusso cliente senza verifiche bloccanti;
+- regole di business centralizzate aggiornate;
+- migration iniziale e seconda migration evolutiva;
+- `.env.example` iniziale;
+- istruzioni locali, Supabase e Vercel iniziali in `README.md`.
 
 Non ancora implementato:
 
@@ -239,10 +294,4 @@ Non ancora implementato:
 
 ## Domande aperte
 
-1. **Semantica di `check_match_intestatario`:** il nome suggerisce che `true` significhi “corrispondenza riuscita”, mentre la descrizione delle verifiche bloccanti dice che un valore `true` blocca anche per “match intestatario fallito”. Prima di automatizzare le transizioni va definita una semantica uniforme, idealmente rinominando il campo o distinguendo esito positivo e anomalia.
-2. **Identità delle agenzie nel CSV:** in assenza di un identificatore stabile, la migration usa provvisoriamente la combinazione esatta `(nome, indirizzo, cap)` per evitare duplicati. Va confermato se il CSV possiede un ID oppure se la deduplicazione deve ignorare maiuscole, spazi e variazioni dell'indirizzo.
-3. **Finestra dei sei giorni:** la configurazione iniziale include oggi nei sei giorni. Va confermato se si intendono giorni di calendario o lavorativi e se vanno esclusi festivi o giorni non disponibili per l'agenzia.
-4. **Disponibilità degli appuntamenti:** non sono definite capacità, chiusure o conferme dell'agenzia. La soluzione minima registra soltanto data e fascia scelte dal cliente; va confermato se serve disponibilità reale.
-5. **Validazione della targa:** la regola iniziale accetta il formato moderno `AA123AA`. Va chiarito se accettare targhe storiche, speciali, estere o spazi e trattini.
-6. **Contatti agenzia mancanti:** `telefono` ed `email` sono nullable per non bloccare l'import. Va confermato se uno dei due debba essere obbligatorio, considerando che il telefono deve essere mostrato al cliente.
-7. **Sessione admin:** è richiesta una sola password, ma non sono definiti durata della sessione, rate limiting e procedura di rotazione. Prima di esporre `/admin` a clienti reali va scelta la soluzione minima sicura.
+Nessuna.
