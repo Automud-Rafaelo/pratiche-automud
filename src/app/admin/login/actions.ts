@@ -10,7 +10,14 @@ import {
 } from "@/lib/admin/auth";
 
 export async function loginAction(formData: FormData) {
-  const { ipHash, allowed } = await reserveAdminLoginAttempt();
+  let reservation: Awaited<ReturnType<typeof reserveAdminLoginAttempt>>;
+  try {
+    reservation = await reserveAdminLoginAttempt();
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : "Errore sconosciuto";
+    redirect(`/admin/login?error=service&cause=${encodeURIComponent(cause)}`);
+  }
+  const { ipHash, allowed } = reservation;
 
   if (!allowed) {
     redirect("/admin/login?error=rate_limit");
@@ -21,7 +28,12 @@ export async function loginAction(formData: FormData) {
     redirect("/admin/login?error=invalid");
   }
 
-  await clearFailedLogins(ipHash);
-  await createAdminSession();
+  try {
+    await clearFailedLogins(ipHash);
+    await createAdminSession();
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : "Errore sconosciuto";
+    redirect(`/admin/login?error=service&cause=${encodeURIComponent(cause)}`);
+  }
   redirect("/admin");
 }

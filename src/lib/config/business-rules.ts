@@ -23,6 +23,33 @@ export const VERIFICATION_FIELDS = [
 export const ATTENTION_EVENT_TYPES = [
   "targa_contestata",
   "nessuna_agenzia_nel_raggio",
+  "geocoding_fallito",
+  "external_service_error",
+] as const;
+
+export const CUSTOMER_SCREEN_IDS = [
+  "welcome",
+  "owner",
+  "owner_notice",
+  "first_name",
+  "last_name",
+  "tax_code",
+  "iban",
+  "plate",
+  "plate_notice",
+  "postal_code",
+  "coownership",
+  "coownership_notice",
+  "keys",
+  "agency",
+  "agency_fallback",
+  "owner_availability",
+  "availability_notice",
+  "appointment",
+  "pickup_location",
+  "pickup_address",
+  "pickup_phone",
+  "complete",
 ] as const;
 
 export const BUSINESS_RULES = {
@@ -53,9 +80,11 @@ export const BUSINESS_RULES = {
   agencyImport: {
     deduplicationFields: ["nome_normalizzato", "cap_normalizzato"],
     activeRequiresPhone: true,
+    placesBatchSize: 10,
   },
   validation: {
     italianPostalCodePattern: /^\d{5}$/,
+    phonePattern: /^\+?[\d\s().-]{7,20}$/,
     italianTaxCodePattern:
       /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/i,
     italianIbanPattern: /^IT\d{2}[A-Z]\d{10}[A-Z0-9]{12}$/i,
@@ -69,6 +98,75 @@ export function normalizeVehiclePlate(value: string) {
 
 export function normalizeAgencyKeyPart(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function normalizeUppercaseValue(value: string) {
+  return value.toUpperCase().replace(/\s+/g, "");
+}
+
+export function isValidItalianTaxCode(value: string) {
+  return BUSINESS_RULES.validation.italianTaxCodePattern.test(
+    normalizeUppercaseValue(value),
+  );
+}
+
+export function isValidItalianPostalCode(value: string) {
+  return BUSINESS_RULES.validation.italianPostalCodePattern.test(value.trim());
+}
+
+export function isValidPhone(value: string) {
+  return BUSINESS_RULES.validation.phonePattern.test(value.trim());
+}
+
+export function isValidIban(value: string) {
+  const normalized = normalizeUppercaseValue(value);
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(normalized)) return false;
+
+  const countryLengths: Record<string, number> = {
+    AT: 20,
+    BE: 16,
+    CH: 21,
+    DE: 22,
+    ES: 24,
+    FR: 27,
+    GB: 22,
+    IE: 22,
+    IT: 27,
+    NL: 18,
+    PT: 25,
+  };
+  if (countryLengths[normalized.slice(0, 2)] !== normalized.length) return false;
+
+  const rearranged = normalized.slice(4) + normalized.slice(0, 4);
+  let remainder = 0;
+  for (const character of rearranged) {
+    const digits = /[A-Z]/.test(character)
+      ? String(character.charCodeAt(0) - 55)
+      : character;
+    for (const digit of digits) {
+      remainder = (remainder * 10 + Number(digit)) % 97;
+    }
+  }
+  return remainder === 1;
+}
+
+export function calculateHaversineDistanceKm(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+) {
+  const earthRadiusKm = 6371;
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const latitudeDelta = toRadians(to.lat - from.lat);
+  const longitudeDelta = toRadians(to.lng - from.lng);
+  const latitude1 = toRadians(from.lat);
+  const latitude2 = toRadians(to.lat);
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(latitude1) *
+      Math.cos(latitude2) *
+      Math.sin(longitudeDelta / 2) ** 2;
+
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
 export type AppointmentPreferenceOption = {
@@ -154,3 +252,4 @@ export type AppointmentSlot = (typeof APPOINTMENT_SLOTS)[number];
 export type PickupLocation = (typeof PICKUP_LOCATIONS)[number];
 export type AgencyImportStatus = (typeof AGENCY_IMPORT_STATUSES)[number];
 export type VerificationField = (typeof VERIFICATION_FIELDS)[number];
+export type CustomerScreenId = (typeof CUSTOMER_SCREEN_IDS)[number];

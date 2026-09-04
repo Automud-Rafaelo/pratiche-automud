@@ -20,6 +20,7 @@ Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
 - Inserire le ambiguità in **Domande aperte** e scegliere la soluzione più semplice e reversibile; non inventare requisiti.
 - Mantenere tutte le regole di business in `src/lib/config/business-rules.ts`, senza duplicarle nei componenti, nelle route o nei servizi.
 - Non introdurre servizi esterni diversi da Supabase e Google Maps Platform.
+- Ogni chiamata a Google Maps o Supabase che fallisce deve essere registrata nel log server e produrre nel pannello un messaggio visibile all'operatore con la causa. Non lasciare mai uno stato `pending` senza una spiegazione operativa.
 
 ## Stack obbligatorio
 
@@ -52,7 +53,7 @@ Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
 - Tutte le route sotto `/admin`, esclusa `/admin/login`, verificano la sessione.
 - Tutte le operazioni admin sono server-side e usano `SUPABASE_SERVICE_ROLE_KEY`; il browser non comunica mai direttamente con Supabase.
 - `GOOGLE_MAPS_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` e `ADMIN_PASSWORD` devono essere usate soltanto lato server.
-- Lo schema abilita RLS senza policy pubbliche. Anche il futuro flusso cliente deve passare da route handler o server action che validano il token.
+- Lo schema abilita RLS senza policy pubbliche. Il flusso cliente passa da server action che rileggono la pratica e validano il token e la schermata consentita prima di ogni scrittura.
 - Non registrare token, password, IBAN, codice fiscale o altre informazioni sensibili nei log applicativi.
 
 ## Stati della pratica
@@ -70,7 +71,7 @@ Lo step 1 passa direttamente a `step2_agenzia`. Le verifiche non modificano lo s
 
 ## Flusso cliente di riferimento
 
-Il flusso seguente è specificato ma non ancora implementato.
+Il flusso seguente è implementato in `/p/[token]`.
 
 ### Apertura
 
@@ -82,8 +83,8 @@ Mostrare una domanda per schermata:
 
 1. nome;
 2. cognome;
-3. codice fiscale, con validazione del formato italiano;
-4. IBAN, con validazione del formato IBAN;
+3. codice fiscale, con validazione del formato italiano a 16 caratteri;
+4. IBAN, con lunghezza specifica per paese e checksum mod-97; se chi compila non è il proprietario, spiegare che il conto deve essere intestato al proprietario;
 5. conferma della targa mostrata dall'applicazione.
 
 Il cliente non digita la targa. Sceglie “Confermo” oppure “Non è la mia targa”. Nel secondo caso registrare un evento `targa_contestata`, evidenziarlo nel pannello admin e lasciare proseguire la pratica. Al completamento dello step impostare direttamente `step2_agenzia`.
@@ -102,6 +103,8 @@ Geocodificare il CAP passando prima da `cap_coordinate`. Mostrare fino a quattro
 
 Se non esistono agenzie entro 25 km, mostrare comunque le quattro agenzie attive più vicine, rendere evidente la distanza e registrare l'evento `nessuna_agenzia_nel_raggio`.
 
+Se il geocoding fallisce, mostrare una schermata rassicurante, proseguire senza `agenzia_id` e registrare `geocoding_fallito` con CAP e causa. Il pannello deve rendere evidente questo evento.
+
 ### Step 3 — Preferenza appuntamento
 
 Il testo introduttivo è: “Quando preferiresti andare in agenzia? Ti confermeremo noi l'appuntamento”. La selezione del cliente è una preferenza, non un appuntamento confermato.
@@ -118,7 +121,7 @@ Regole del calendario, calcolate lato server nel fuso `Europe/Rome`:
 
 ### Step 4 — Ritiro
 
-Chiedere dove si trova l'auto: `casa`, `deposito` o `carrozzeria`. Raccogliere indirizzo preciso e telefono di contatto.
+Chiedere, una schermata alla volta, dove si trova l'auto (`casa`, `deposito` o `carrozzeria`), l'indirizzo preciso e il telefono di contatto del carro attrezzi.
 
 ### Completamento
 
@@ -155,6 +158,16 @@ Quando l'operatore dichiara conclusa l'attività, valorizza `verifiche_completat
 - Le operazioni di salvataggio devono essere idempotenti quando possibile.
 - Le transizioni di stato devono essere validate lato server; il browser non può impostare liberamente uno stato.
 
+## Esperienza cliente e stile
+
+- Progettare prima per 375 px; su desktop mantenere una colonna centrata larga al massimo circa 480 px.
+- Mostrare una sola domanda per schermata, una sola spiegazione breve, un campo o gruppo di scelte e il bottone “Continua”.
+- Mostrare il link “Indietro” sotto il bottone e un contatore testuale `x di N` in fondo, senza barra.
+- Il bottone resta subito sotto il campo per essere visibile con la tastiera mobile; usare `inputmode`, `autocomplete` e `autocapitalize` appropriati e scorrere il campo in vista al focus.
+- Tutti i testi cliente risiedono esclusivamente in `src/lib/copy/customer.ts`, sono in italiano, diretti, caldi e senza gergo interno.
+- Usare Red Hat Display tramite `next/font`, colonna crema, header marrone arrotondato e arancione come colore primario, coerentemente con `offerta.automud.com`.
+- Non usare librerie UI: soltanto Tailwind CSS.
+
 ## Pannello admin
 
 È uno strumento interno per due o tre operatori. Usa soltanto tabelle, form, bottoni e Tailwind di base; non richiede una UI elaborata.
@@ -165,7 +178,7 @@ Form con la sola password. Alla riuscita crea il cookie di sessione e reindirizz
 
 ### `/admin`
 
-Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome del cliente se presenti, stato, data di creazione e tre indicatori: verifiche completate, appuntamento confermato ed eventi da attenzionare (`targa_contestata` o `nessuna_agenzia_nel_raggio`). Include il filtro “Da verificare”, definito come pratiche `completata` con `verifiche_completate_at` nullo, e il bottone “Nuova pratica”.
+Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome del cliente se presenti, stato, data di creazione e tre indicatori: verifiche completate, appuntamento confermato ed eventi da attenzionare (`targa_contestata`, `nessuna_agenzia_nel_raggio`, `geocoding_fallito` o errori dei servizi esterni). Gli errori esterni non risolti sono mostrati con la causa in cima alla pagina. Include il filtro “Da verificare”, definito come pratiche `completata` con `verifiche_completate_at` nullo, e il bottone “Nuova pratica”.
 
 ### `/admin/pratiche/nuova`
 
@@ -193,10 +206,12 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 - Se latitudine e longitudine sono già presenti, usarle senza chiamare Places e impostare `import_status = 'ok'`.
 - Per ogni riga `pending` senza coordinate, chiamare Google Places API (New), Text Search, con nome e indirizzo e salvare latitudine, longitudine, `google_place_id` e orari.
 - Se nessun risultato è trovato, impostare `import_status = 'not_found'`.
+- Salvare ogni errore Places in `import_error`, includendo la causa restituita dall'API, e mostrarlo accanto allo stato.
+- Eseguire al massimo dieci chiamate Places per pressione del bottone e mostrare quante righe sono state elaborate e quante restano `pending`.
 - Salvare ogni riga singolarmente, così un'importazione interrotta riprende dalle righe `pending`.
 - Se `GOOGLE_MAPS_API_KEY` manca, inserire o aggiornare le righe, mantenerle `pending` e mostrare un messaggio chiaro.
 - Un'agenzia è `attiva` soltanto se possiede un telefono; l'email è facoltativa.
-- La pagina mostra le agenzie e permette di attivarle o disattivarle, rispettando il vincolo del telefono.
+- La pagina mostra il riepilogo totale/ok/not found/pending, le agenzie e permette di attivarle o disattivarle, rispettando il vincolo del telefono. Mostrare `indirizzo` una sola volta, senza aggiungere nuovamente CAP e comune.
 
 ## Google Maps Platform
 
@@ -234,6 +249,7 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 - `orari`: JSONB nullable ottenuto tramite Places e non mostrato nella v1.
 - `attiva`: booleano, consentito soltanto quando il telefono è presente.
 - `import_status`: `pending`, `ok` oppure `not_found`.
+- `import_error`: ultima causa di errore Places, nullable e cancellata dopo un esito conclusivo.
 
 ### `cap_coordinate`
 
@@ -243,7 +259,11 @@ Cache del geocoding: `cap` è la chiave primaria; `lat` e `lng` sono numerici; `
 
 Log di debug e amministrazione: `id`, `pratica_id`, `created_at`, `tipo` e `dettaglio` JSONB. Gli eventi vengono eliminati a cascata se viene eliminata la pratica.
 
-Eventi da evidenziare nella lista admin: `targa_contestata` e `nessuna_agenzia_nel_raggio`.
+Eventi da evidenziare nella lista admin: `targa_contestata`, `nessuna_agenzia_nel_raggio`, `geocoding_fallito` ed errori dei servizi esterni.
+
+### `operator_alerts`
+
+Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_at`, `source`, `message`, `context` e `resolved_at`. Sono visibili in `/admin` e possono essere contrassegnati come risolti.
 
 ## Regole di business centralizzate
 
@@ -256,10 +276,12 @@ Eventi da evidenziare nella lista admin: `targa_contestata` e `nessuna_agenzia_n
 - calendario a tre giorni, esclusione domenica, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
 - durata e rate limit della sessione admin;
 - normalizzazione della chiave di deduplicazione delle agenzie.
+- validazione completa di codice fiscale, IBAN, CAP e telefono, batch Places e formula di Haversine.
 
 ## Variabili d'ambiente
 
 - `NEXT_PUBLIC_APP_URL`
+- `NEXT_PUBLIC_WHATSAPP_NUMBER`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
@@ -278,24 +300,38 @@ Completato:
 - dipendenza `@supabase/supabase-js`;
 - specifica aggiornata al flusso cliente senza verifiche bloccanti;
 - regole di business centralizzate aggiornate;
-- migration iniziale, migration del flusso operatore e migration di supporto admin;
+- migration iniziale, migration del flusso operatore, migration di supporto admin e migration del flusso cliente;
 - autenticazione admin con cookie firmato, scadenza a 12 ore e rate limit persistente per IP;
 - lista pratiche con filtro “Da verificare” e indicatori di attenzione;
 - creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
 - dettaglio pratica con dati cliente, verifiche a tre stati, appuntamento confermato, note e log eventi;
 - import idempotente di `data/agenzie.csv`, arricchimento tramite Places API (New), ripresa delle righe `pending` e attivazione/disattivazione;
 - accesso admin a Supabase esclusivamente server-side tramite service role;
+- flusso cliente completo `/p/[token]`, mobile-first, con una domanda per schermata, ripresa automatica e testi centralizzati;
+- validazione server e browser di codice fiscale, IBAN, CAP e telefono;
+- geocoding CAP con cache, calcolo Haversine, fallback senza agenzia ed eventi di attenzione;
+- calendario server-side basato esclusivamente su `getAppointmentPreferenceOptions`;
+- pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
+- gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
+- import Places in batch da dieci con riepilogo e causa degli errori;
+- test automatici per validazioni, calendario e Haversine;
 - `.env.example` completo;
 - istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.
 
 Non ancora implementato:
 
-- flusso cliente `/p/[token]`;
-- flusso cliente, relativo accesso applicativo a Supabase, transizioni ed eventi;
-- integrazione Google Geocoding;
-- ricerca delle agenzie e Haversine;
-- test automatici e deploy Vercel.
+- deploy Vercel.
 
 ## Domande aperte
 
 Nessuna.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

@@ -3,23 +3,44 @@ import Link from "next/link";
 import { requireAdminSession } from "@/lib/admin/auth";
 import { formatDateTime, formatStatus } from "@/lib/admin/format";
 import type { EventRow, PracticeRow } from "@/lib/admin/types";
-import { ATTENTION_EVENT_TYPES } from "@/lib/config/business-rules";
+import {
+  ATTENTION_EVENT_TYPES,
+  BUSINESS_RULES,
+} from "@/lib/config/business-rules";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
+import { resolveOperatorAlertAction } from "./actions";
+
 type AdminPageProps = {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string; service_error?: string }>;
 };
 
 const attentionLabels: Record<string, string> = {
   targa_contestata: "Targa contestata",
-  nessuna_agenzia_nel_raggio: "Agenzia oltre 25 km",
+  nessuna_agenzia_nel_raggio: `Agenzia oltre ${BUSINESS_RULES.nearbyAgencies.radiusKm} km`,
+  geocoding_fallito: "Geocoding fallito",
+  external_service_error: "Servizio esterno non disponibile",
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   await requireAdminSession();
-  const { filter } = await searchParams;
+  const { filter, service_error: actionServiceError } = await searchParams;
   const toVerifyOnly = filter === "to_verify";
   const supabase = createAdminSupabaseClient();
+
+  const { data: alertData, error: alertError } = await supabase
+    .from("operator_alerts")
+    .select("id,created_at,source,message")
+    .is("resolved_at", null)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  const serviceMessages: string[] = [];
+  if (actionServiceError) serviceMessages.push(actionServiceError);
+  if (alertError) {
+    const message = `Supabase: lettura avvisi operatore fallita: ${alertError.message}`;
+    console.error(message);
+    serviceMessages.push(message);
+  }
 
   let practiceQuery = supabase
     .from("pratiche")
@@ -34,7 +55,14 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   const { data: practicesData, error: practicesError } = await practiceQuery;
   if (practicesError) {
-    throw new Error(`Unable to load practices: ${practicesError.message}`);
+    const message = `Supabase: lettura pratiche fallita: ${practicesError.message}`;
+    console.error(message);
+    return (
+      <section className="rounded-lg border border-red-300 bg-red-50 p-5 text-red-950">
+        <h1 className="text-xl font-semibold">Pratiche non disponibili</h1>
+        <p className="mt-2 text-sm">{message}</p>
+      </section>
+    );
   }
 
   const practices = (practicesData ?? []) as PracticeRow[];
@@ -49,9 +77,12 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       .in("tipo", [...ATTENTION_EVENT_TYPES]);
 
     if (error) {
-      throw new Error(`Unable to load attention events: ${error.message}`);
+      const message = `Supabase: lettura eventi di attenzione fallita: ${error.message}`;
+      console.error(message);
+      serviceMessages.push(message);
+    } else {
+      attentionEvents = data ?? [];
     }
-    attentionEvents = data ?? [];
   }
 
   const attentionByPractice = new Map<string, string[]>();
@@ -63,6 +94,39 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   return (
     <>
+      {serviceMessages.map((message) => (
+        <p
+          className="mb-4 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-950"
+          key={message}
+        >
+          {message}
+        </p>
+      ))}
+      {(alertData ?? []).length > 0 ? (
+        <section className="mb-6 rounded-lg border border-red-300 bg-red-50 p-4">
+          <h2 className="font-semibold text-red-900">Errori da controllare</h2>
+          <div className="mt-3 space-y-2">
+            {(alertData ?? []).map((alert) => (
+              <div
+                className="flex flex-wrap items-center gap-3 rounded-md bg-white p-3 text-sm"
+                key={alert.id}
+              >
+                <strong>{alert.source}</strong>
+                <span>{alert.message}</span>
+                <span className="text-slate-500">
+                  {formatDateTime(alert.created_at)}
+                </span>
+                <form action={resolveOperatorAlertAction} className="ml-auto">
+                  <input name="alert_id" type="hidden" value={alert.id} />
+                  <button className="rounded border px-2 py-1" type="submit">
+                    Segna come risolto
+                  </button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Pratiche</h1>

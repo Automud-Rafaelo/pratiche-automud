@@ -26,10 +26,23 @@ export default async function ImportAgenciesPage({
     .order("nome", { ascending: true });
 
   if (error) {
-    throw new Error(`Unable to load agencies: ${error.message}`);
+    console.error("[Supabase] Unable to load agencies", error.message);
+    return (
+      <section className="rounded-lg border border-red-300 bg-red-50 p-5 text-red-950">
+        <h1 className="text-xl font-semibold">Agenzie non disponibili</h1>
+        <p className="mt-2 text-sm">Supabase: {error.message}</p>
+      </section>
+    );
   }
 
   const agencies = (data ?? []) as AgencyRow[];
+  const counts = agencies.reduce(
+    (result, agency) => {
+      result[agency.import_status] += 1;
+      return result;
+    },
+    { pending: 0, ok: 0, not_found: 0 },
+  );
 
   return (
     <>
@@ -50,24 +63,39 @@ export default async function ImportAgenciesPage({
         </form>
       </div>
 
+      <div className="mt-5 grid gap-3 sm:grid-cols-4">
+        <div className="rounded-md border bg-white p-3"><strong>Totale</strong><div>{agencies.length}</div></div>
+        <div className="rounded-md border bg-white p-3"><strong>Ok</strong><div>{counts.ok}</div></div>
+        <div className="rounded-md border bg-white p-3"><strong>Non trovate</strong><div>{counts.not_found}</div></div>
+        <div className="rounded-md border bg-white p-3"><strong>In attesa</strong><div>{counts.pending}</div></div>
+      </div>
+
       {query.imported === "1" ? (
         <div className="mt-5 rounded-md bg-green-50 p-4 text-sm text-green-900">
-          Elaborate {query.rows} righe: {query.ok} ok, {query.not_found} non trovate, {query.pending} in attesa.
-          {query.places_errors !== "0"
-            ? ` ${query.places_errors} chiamate Places potranno essere ritentate.`
-            : ""}
+          Elaborate {query.processed} di {query.pending_before} agenzie in attesa.
+          {query.pending_after !== "0"
+            ? " Premi di nuovo Importa per continuare dopo aver risolto gli eventuali errori mostrati."
+            : " Non restano agenzie in attesa."}
         </div>
+      ) : null}
+
+      {query.run_error ? (
+        <p className="mt-3 rounded-md bg-red-50 p-4 text-sm text-red-700">
+          Import non completato: {query.run_error}
+        </p>
       ) : null}
 
       {query.missing_key === "1" ? (
         <p className="mt-3 rounded-md bg-amber-50 p-4 text-sm text-amber-900">
-          GOOGLE_MAPS_API_KEY non è configurata: le righe sono state inserite e quelle senza coordinate restano in attesa.
+          Google Places: chiave assente. Le righe sono state inserite, ma quelle senza coordinate restano in attesa.
         </p>
       ) : null}
 
-      {query.toggle_error === "phone" ? (
+      {query.toggle_error ? (
         <p className="mt-3 rounded-md bg-red-50 p-4 text-sm text-red-700">
-          Non puoi attivare un&apos;agenzia senza telefono.
+          {query.toggle_error === "phone"
+            ? "Non puoi attivare un'agenzia senza telefono."
+            : query.toggle_error}
         </p>
       ) : null}
 
@@ -85,6 +113,7 @@ export default async function ImportAgenciesPage({
               <th className="px-4 py-3">Contatti</th>
               <th className="px-4 py-3">Coordinate</th>
               <th className="px-4 py-3">Import</th>
+              <th className="px-4 py-3">Errore import</th>
               <th className="px-4 py-3">Attiva</th>
               <th className="px-4 py-3">Azione</th>
             </tr>
@@ -96,9 +125,6 @@ export default async function ImportAgenciesPage({
                   <div className="font-medium">{agency.nome}</div>
                   <div className="max-w-sm text-slate-600">
                     {agency.indirizzo}
-                    {agency.cap || agency.comune
-                      ? ` · ${[agency.cap, agency.comune, agency.provincia].filter(Boolean).join(" ")}`
-                      : ""}
                   </div>
                 </td>
                 <td className="px-4 py-3">
@@ -112,6 +138,9 @@ export default async function ImportAgenciesPage({
                 </td>
                 <td className="px-4 py-3">
                   {statusLabels[agency.import_status]}
+                </td>
+                <td className="max-w-md px-4 py-3 text-sm text-red-700">
+                  {agency.import_error ?? "—"}
                 </td>
                 <td className="px-4 py-3">{agency.attiva ? "Sì" : "No"}</td>
                 <td className="px-4 py-3">
@@ -134,7 +163,7 @@ export default async function ImportAgenciesPage({
             ))}
             {agencies.length === 0 ? (
               <tr>
-                <td className="px-4 py-8 text-center text-slate-500" colSpan={6}>
+                <td className="px-4 py-8 text-center text-slate-500" colSpan={7}>
                   Nessuna agenzia importata.
                 </td>
               </tr>

@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
+import { Red_Hat_Display } from "next/font/google";
 import type { ReactNode } from "react";
 import "./globals.css";
+
+const redHatDisplay = Red_Hat_Display({
+  subsets: ["latin"],
+  variable: "--font-red-hat-display",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Pratiche Automud",
@@ -10,7 +17,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="it">
-      <body>{children}</body>
+      <body className={redHatDisplay.variable}>{children}</body>
     </html>
   );
 }

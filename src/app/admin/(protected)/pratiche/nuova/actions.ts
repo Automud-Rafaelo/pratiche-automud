@@ -9,6 +9,7 @@ import {
   normalizeVehiclePlate,
   PRACTICE_TYPES,
 } from "@/lib/config/business-rules";
+import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 export async function createPracticeAction(formData: FormData) {
@@ -59,7 +60,11 @@ export async function createPracticeAction(formData: FormData) {
     .single();
 
   if (error) {
-    throw new Error(`Unable to create practice: ${error.message}`);
+    const message = `Supabase: creazione pratica fallita: ${error.message}`;
+    await reportExternalServiceError({ source: "Supabase", message });
+    redirect(
+      `/admin/pratiche/nuova?error=service&cause=${encodeURIComponent(message)}`,
+    );
   }
 
   await recordAdminEvent(data.id, "pratica_creata", {

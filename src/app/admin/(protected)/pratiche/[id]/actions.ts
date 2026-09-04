@@ -10,6 +10,7 @@ import {
   VERIFICATION_FIELDS,
   type VerificationField,
 } from "@/lib/config/business-rules";
+import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 function getPracticeId(formData: FormData) {
@@ -20,10 +21,25 @@ function getPracticeId(formData: FormData) {
   return value;
 }
 
-function redirectWithMessage(practiceId: string, message: string) {
+function redirectWithMessage(
+  practiceId: string,
+  message: string,
+  cause?: string,
+) {
   revalidatePath("/admin");
   revalidatePath(`/admin/pratiche/${practiceId}`);
-  redirect(`/admin/pratiche/${practiceId}?notice=${message}`);
+  const query = new URLSearchParams({ notice: message });
+  if (cause) query.set("cause", cause);
+  redirect(`/admin/pratiche/${practiceId}?${query.toString()}`);
+}
+
+async function handleSupabaseError(practiceId: string, message: string) {
+  await reportExternalServiceError({
+    source: "Supabase",
+    message,
+    practiceId,
+  });
+  redirectWithMessage(practiceId, "service_error", message);
 }
 
 function parseVerification(value: FormDataEntryValue | null) {
@@ -48,7 +64,10 @@ export async function saveVerificationsAction(formData: FormData) {
     .eq("id", practiceId);
 
   if (error) {
-    throw new Error(`Unable to save verifications: ${error.message}`);
+    await handleSupabaseError(
+      practiceId,
+      `Salvataggio verifiche fallito: ${error.message}`,
+    );
   }
 
   await recordAdminEvent(practiceId, "verifiche_aggiornate");
@@ -66,7 +85,10 @@ export async function completeVerificationsAction(formData: FormData) {
     .single();
 
   if (loadError) {
-    throw new Error(`Unable to load verifications: ${loadError.message}`);
+    await handleSupabaseError(
+      practiceId,
+      `Lettura verifiche fallita: ${loadError.message}`,
+    );
   }
 
   const verificationData = data as unknown as Record<
@@ -87,7 +109,10 @@ export async function completeVerificationsAction(formData: FormData) {
     .eq("id", practiceId);
 
   if (error) {
-    throw new Error(`Unable to complete verifications: ${error.message}`);
+    await handleSupabaseError(
+      practiceId,
+      `Completamento verifiche fallito: ${error.message}`,
+    );
   }
 
   await recordAdminEvent(practiceId, "verifiche_completate");
@@ -122,7 +147,10 @@ export async function saveAppointmentAction(formData: FormData) {
     .eq("id", practiceId);
 
   if (error) {
-    throw new Error(`Unable to save appointment: ${error.message}`);
+    await handleSupabaseError(
+      practiceId,
+      `Salvataggio appuntamento fallito: ${error.message}`,
+    );
   }
 
   await recordAdminEvent(practiceId, "appuntamento_aggiornato", {
@@ -146,7 +174,10 @@ export async function saveNotesAction(formData: FormData) {
     .eq("id", practiceId);
 
   if (error) {
-    throw new Error(`Unable to save notes: ${error.message}`);
+    await handleSupabaseError(
+      practiceId,
+      `Salvataggio note fallito: ${error.message}`,
+    );
   }
 
   await recordAdminEvent(practiceId, "note_operatore_aggiornate");

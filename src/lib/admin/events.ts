@@ -1,5 +1,6 @@
 import "server-only";
 
+import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 export async function recordAdminEvent(
@@ -15,6 +16,10 @@ export async function recordAdminEvent(
   });
 
   if (error) {
-    throw new Error(`Unable to record event: ${error.message}`);
+    await reportExternalServiceError({
+      source: "Supabase",
+      message: `Registrazione evento operatore fallita: ${error.message}`,
+      practiceId,
+    });
   }
 }
