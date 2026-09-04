@@ -71,6 +71,83 @@ export function normalizeAgencyKeyPart(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+export type AppointmentPreferenceOption = {
+  date: string;
+  slots: readonly AppointmentSlot[];
+};
+
+function getRomeDateAndMinutes(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_RULES.appointmentPreference.timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return {
+    date: `${value("year")}-${value("month")}-${value("day")}`,
+    minutes: Number(value("hour")) * 60 + Number(value("minute")),
+  };
+}
+
+function addCalendarDays(date: string, days: number) {
+  const [year, month, day] = date.split("-").map(Number);
+  const result = new Date(Date.UTC(year, month - 1, day + days, 12));
+  return result.toISOString().slice(0, 10);
+}
+
+function getWeekday(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay();
+}
+
+export function getAppointmentPreferenceOptions(
+  now: Date = new Date(),
+): AppointmentPreferenceOption[] {
+  const { date: today, minutes } = getRomeDateAndMinutes(now);
+  const [afternoonHour, afternoonMinute] =
+    BUSINESS_RULES.appointmentPreference.afternoonOnlyAfter
+      .split(":")
+      .map(Number);
+  const [excludeHour, excludeMinute] =
+    BUSINESS_RULES.appointmentPreference.excludeTodayAfter
+      .split(":")
+      .map(Number);
+  const afternoonCutoff = afternoonHour * 60 + afternoonMinute;
+  const excludeTodayCutoff = excludeHour * 60 + excludeMinute;
+  const startOffset = minutes > excludeTodayCutoff ? 1 : 0;
+  const options: AppointmentPreferenceOption[] = [];
+  let offset = startOffset;
+
+  while (
+    options.length < BUSINESS_RULES.appointmentPreference.selectableDayCount
+  ) {
+    const date = addCalendarDays(today, offset);
+    const weekday = getWeekday(date);
+
+    if (
+      !(BUSINESS_RULES.appointmentPreference.excludedWeekdays as readonly number[]).includes(
+        weekday,
+      )
+    ) {
+      const slots =
+        offset === 0 && minutes > afternoonCutoff
+          ? (["pomeriggio"] as const)
+          : BUSINESS_RULES.appointmentPreference.slots;
+      options.push({ date, slots });
+    }
+
+    offset += 1;
+  }
+
+  return options;
+}
+
 export type PracticeStatus = (typeof PRACTICE_STATUSES)[number];
 export type PracticeType = (typeof PRACTICE_TYPES)[number];
 export type AppointmentSlot = (typeof APPOINTMENT_SLOTS)[number];

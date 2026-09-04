@@ -278,17 +278,21 @@ Completato:
 - dipendenza `@supabase/supabase-js`;
 - specifica aggiornata al flusso cliente senza verifiche bloccanti;
 - regole di business centralizzate aggiornate;
-- migration iniziale e seconda migration evolutiva;
-- `.env.example` iniziale;
-- istruzioni locali, Supabase e Vercel iniziali in `README.md`.
+- migration iniziale, migration del flusso operatore e migration di supporto admin;
+- autenticazione admin con cookie firmato, scadenza a 12 ore e rate limit persistente per IP;
+- lista pratiche con filtro “Da verificare” e indicatori di attenzione;
+- creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
+- dettaglio pratica con dati cliente, verifiche a tre stati, appuntamento confermato, note e log eventi;
+- import idempotente di `data/agenzie.csv`, arricchimento tramite Places API (New), ripresa delle righe `pending` e attivazione/disattivazione;
+- accesso admin a Supabase esclusivamente server-side tramite service role;
+- `.env.example` completo;
+- istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.
 
 Non ancora implementato:
 
 - flusso cliente `/p/[token]`;
-- pannello `/admin` e autenticazione amministrativa;
-- accesso applicativo a Supabase, transizioni ed eventi;
-- import CSV delle agenzie;
-- integrazione Google Places e Geocoding;
+- flusso cliente, relativo accesso applicativo a Supabase, transizioni ed eventi;
+- integrazione Google Geocoding;
 - ricerca delle agenzie e Haversine;
 - test automatici e deploy Vercel.
 

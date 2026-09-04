@@ -1,6 +1,6 @@
 # Pratiche Automud
 
-Prototipo mobile-first per accompagnare i clienti Automud nella raccolta dei dati di pagamento, nella scelta dell'agenzia, nella prenotazione e nell'organizzazione del ritiro dell'auto.
+Prototipo mobile-first per accompagnare i clienti Automud nella raccolta dei dati di pagamento, nella scelta dell'agenzia, nella preferenza di appuntamento e nell'organizzazione del ritiro dell'auto. Il pannello operatori è disponibile in `/admin`.
 
 ## Avvio in locale
 
@@ -12,7 +12,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Compilare `.env.local` con i valori del proprio ambiente, quindi aprire [http://localhost:3000](http://localhost:3000).
+Compilare `.env.local` con i valori del proprio ambiente. Per lo sviluppo locale usare `NEXT_PUBLIC_APP_URL=http://localhost:3000`, una `ADMIN_PASSWORD` lunga e non riutilizzata e le credenziali del progetto Supabase. `GOOGLE_MAPS_API_KEY` può restare vuota: l'import inserirà le agenzie senza coordinate con stato `pending`. Aprire quindi [http://localhost:3000](http://localhost:3000) oppure [http://localhost:3000/admin](http://localhost:3000/admin).
 
 Comandi di verifica:
 
@@ -31,13 +31,27 @@ npx supabase link --project-ref <project-ref>
 npx supabase db push
 ```
 
-La migration iniziale si trova in `supabase/migrations`. Le tabelle hanno Row Level Security attiva e nessuna policy pubblica: il codice futuro dovrà accedere ai dati sensibili tramite route handler o server action, validando il token della pratica e mantenendo la service role key esclusivamente sul server.
+Le migration in `supabase/migrations` vengono applicate in ordine:
+
+1. `20260904130000_initial_schema.sql` crea lo schema iniziale;
+2. `20260904140000_operator_workflow.sql` aggiorna stati, verifiche, appuntamenti e deduplicazione agenzie;
+3. `20260904150000_admin_support.sql` aggiunge il rate limiting della login e consente le righe CSV prive di CAP.
+
+`npx supabase db push` applica soltanto le migration non ancora eseguite. Le tabelle hanno Row Level Security attiva e nessuna policy pubblica: il pannello usa la service role key esclusivamente lato server.
+
+## Import delle agenzie
+
+Il pannello `/admin/import-agenzie` legge `data/agenzie.csv`. Le righe con coordinate vengono importate direttamente; per quelle senza coordinate usa Places API (New), Text Search, se `GOOGLE_MAPS_API_KEY` è configurata. L'import è idempotente sulla coppia nome + CAP normalizzati e può essere rilanciato per riprendere le righe `pending`.
+
+Nel progetto Google Cloud abilitare **Places API (New)** e limitare la chiave all'API e agli ambienti server autorizzati. La chiave non deve essere prefissata con `NEXT_PUBLIC_`.
 
 ## Configurazione e deploy su Vercel
 
 1. Importare la repository GitHub in Vercel.
-2. In **Project Settings → Environment Variables**, aggiungere tutte le variabili elencate in `.env.example` per gli ambienti necessari.
-3. Verificare che `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_MAPS_API_KEY` e `ADMIN_PASSWORD` non vengano mai esposte al browser.
-4. Eseguire il deploy dalla dashboard. I push successivi al branch collegato genereranno nuovi deploy automaticamente.
+2. In **Project Settings → Environment Variables**, aggiungere tutte le variabili elencate in `.env.example` per gli ambienti necessari. Impostare `NEXT_PUBLIC_APP_URL` sul dominio pubblico completo, per esempio `https://pratiche.example.it`.
+3. Impostare `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD` e, se si usa l'arricchimento delle agenzie, `GOOGLE_MAPS_API_KEY`.
+4. Verificare che `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_MAPS_API_KEY` e `ADMIN_PASSWORD` non vengano mai esposte al browser.
+5. Applicare tutte le migration al progetto Supabase di destinazione.
+6. Eseguire il deploy dalla dashboard. I push successivi al branch collegato genereranno nuovi deploy automaticamente.
 
-Prima del deploy applicare le migration al progetto Supabase di destinazione.
+La sessione admin usa un cookie httpOnly firmato con `ADMIN_PASSWORD`, dura 12 ore e limita a cinque i tentativi falliti in 15 minuti per IP.
