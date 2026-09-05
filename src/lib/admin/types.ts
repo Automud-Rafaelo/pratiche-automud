@@ -58,6 +58,7 @@ export type AgencyRow = {
   orari: unknown | null;
   attiva: boolean;
   import_status: AgencyImportStatus;
+  import_error: string | null;
   nome_normalizzato: string;
   cap_normalizzato: string;
 };

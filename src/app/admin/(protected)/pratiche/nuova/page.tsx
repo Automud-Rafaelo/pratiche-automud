@@ -11,6 +11,7 @@ type NewPracticePageProps = {
   searchParams: Promise<{
     created?: string;
     error?: string;
+    cause?: string;
     warning?: string;
   }>;
 };
@@ -19,17 +20,23 @@ export default async function NewPracticePage({
   searchParams,
 }: NewPracticePageProps) {
   await requireAdminSession();
-  const { created, error, warning } = await searchParams;
+  const { created, error, cause, warning } = await searchParams;
   let createdPractice: { id: string; token: string } | null = null;
+  let loadError: string | null = null;
 
   if (created) {
     const supabase = createAdminSupabaseClient();
-    const { data } = await supabase
+    const { data, error: practiceError } = await supabase
       .from("pratiche")
       .select("id,token")
       .eq("id", created)
       .maybeSingle();
-    createdPractice = data;
+    if (practiceError) {
+      loadError = `Supabase: lettura pratica creata fallita: ${practiceError.message}`;
+      console.error(loadError);
+    } else {
+      createdPractice = data;
+    }
   }
 
   const customerLink = createdPractice
@@ -69,9 +76,21 @@ export default async function NewPracticePage({
         </p>
       ) : null}
 
+      {loadError ? (
+        <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          {loadError}
+        </p>
+      ) : null}
+
       {error === "invalid" ? (
         <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
           Controlla i campi inseriti e riprova.
+        </p>
+      ) : null}
+
+      {error === "service" ? (
+        <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+          Operazione non riuscita. Causa: {cause ?? "errore sconosciuto"}
         </p>
       ) : null}
 

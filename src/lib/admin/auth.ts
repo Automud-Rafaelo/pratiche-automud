@@ -10,6 +10,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { BUSINESS_RULES } from "@/lib/config/business-rules";
+import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 const ADMIN_COOKIE_NAME = "automud_admin_session";
@@ -148,6 +149,10 @@ export async function reserveAdminLoginAttempt() {
   });
 
   if (error) {
+    await reportExternalServiceError({
+      source: "Supabase",
+      message: `Rate limit login non disponibile: ${error.message}`,
+    });
     throw new Error(`Unable to reserve login attempt: ${error.message}`);
   }
 
@@ -165,6 +170,10 @@ export async function clearFailedLogins(ipHash: string) {
     .eq("ip_hash", ipHash);
 
   if (error) {
+    await reportExternalServiceError({
+      source: "Supabase",
+      message: `Pulizia tentativi login fallita: ${error.message}`,
+    });
     throw new Error(`Unable to clear login attempts: ${error.message}`);
   }
 }

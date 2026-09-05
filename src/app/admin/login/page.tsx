@@ -5,13 +5,14 @@ import { hasValidAdminSession } from "@/lib/admin/auth";
 import { loginAction } from "./actions";
 
 type LoginPageProps = {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; cause?: string }>;
 };
 
 const errorMessages: Record<string, string> = {
   invalid: "Password non corretta.",
   rate_limit:
     "Troppi tentativi non riusciti. Riprova tra 15 minuti.",
+  service: "Il servizio di accesso non è disponibile.",
 };
 
 export default async function AdminLoginPage({ searchParams }: LoginPageProps) {
@@ -19,7 +20,7 @@ export default async function AdminLoginPage({ searchParams }: LoginPageProps) {
     redirect("/admin");
   }
 
-  const { error } = await searchParams;
+  const { error, cause } = await searchParams;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md items-center px-4">
@@ -32,6 +33,7 @@ export default async function AdminLoginPage({ searchParams }: LoginPageProps) {
         {error && errorMessages[error] ? (
           <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
             {errorMessages[error]}
+            {error === "service" && cause ? ` Causa: ${cause}` : ""}
           </p>
         ) : null}
 

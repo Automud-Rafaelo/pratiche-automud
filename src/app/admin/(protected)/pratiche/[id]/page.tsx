@@ -26,7 +26,7 @@ import {
 
 type PracticeDetailPageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ notice?: string }>;
+  searchParams: Promise<{ notice?: string; cause?: string }>;
 };
 
 const noticeMessages: Record<string, string> = {
@@ -37,6 +37,7 @@ const noticeMessages: Record<string, string> = {
   appointment_saved: "Appuntamento salvato.",
   appointment_invalid: "Inserisci sia la data sia la fascia, oppure nessuna.",
   notes_saved: "Note salvate.",
+  service_error: "Operazione non riuscita.",
 };
 
 const verificationLabels: Record<(typeof VERIFICATION_FIELDS)[number], string> = {
@@ -45,6 +46,13 @@ const verificationLabels: Record<(typeof VERIFICATION_FIELDS)[number], string> =
   check_revisione_scaduta: "Revisione scaduta",
   check_km_scalati: "Chilometri scalati",
   check_fermo_amministrativo: "Fermo amministrativo",
+};
+
+const highlightedEventLabels: Record<string, string> = {
+  targa_contestata: "Il cliente ha contestato la targa.",
+  nessuna_agenzia_nel_raggio:
+    "Non sono state trovate agenzie entro il raggio configurato.",
+  geocoding_fallito: "Non è stato possibile geocodificare il CAP.",
 };
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -81,7 +89,7 @@ export default async function PracticeDetailPage({
 }: PracticeDetailPageProps) {
   await requireAdminSession();
   const { id } = await params;
-  const { notice } = await searchParams;
+  const { notice, cause } = await searchParams;
   const supabase = createAdminSupabaseClient();
   const [{ data: practiceData, error }, { data: eventData, error: eventError }] =
     await Promise.all([
@@ -93,13 +101,24 @@ export default async function PracticeDetailPage({
         .order("created_at", { ascending: false }),
     ]);
 
-  if (error) throw new Error(`Unable to load practice: ${error.message}`);
-  if (eventError) throw new Error(`Unable to load events: ${eventError.message}`);
+  if (error || eventError) {
+    const message = error
+      ? `Supabase: lettura pratica fallita: ${error.message}`
+      : `Supabase: lettura eventi fallita: ${eventError?.message}`;
+    console.error(message);
+    return (
+      <section className="rounded-lg border border-red-300 bg-red-50 p-5 text-red-950">
+        <h1 className="text-xl font-semibold">Dettaglio non disponibile</h1>
+        <p className="mt-2 text-sm">{message}</p>
+      </section>
+    );
+  }
   if (!practiceData) notFound();
 
   const practice = practiceData as PracticeRow;
   const events = (eventData ?? []) as EventRow[];
   let agency: AgencyRow | null = null;
+  let agencyLoadError: string | null = null;
 
   if (practice.agenzia_id) {
     const { data, error: agencyError } = await supabase
@@ -108,12 +127,17 @@ export default async function PracticeDetailPage({
       .eq("id", practice.agenzia_id)
       .maybeSingle();
     if (agencyError) {
-      throw new Error(`Unable to load agency: ${agencyError.message}`);
+      agencyLoadError = `Supabase: lettura agenzia scelta fallita: ${agencyError.message}`;
+      console.error(agencyLoadError);
+    } else {
+      agency = data as AgencyRow | null;
     }
-    agency = data as AgencyRow | null;
   }
 
   const customerLink = buildCustomerLink(practice.token);
+  const highlightedEvents = events.filter(
+    (event) => highlightedEventLabels[event.tipo],
+  );
 
   return (
     <div className="space-y-6">
@@ -126,15 +150,40 @@ export default async function PracticeDetailPage({
         </h1>
       </div>
 
+      {agencyLoadError ? (
+        <p className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-950">
+          {agencyLoadError}
+        </p>
+      ) : null}
+
+      {highlightedEvents.length > 0 ? (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <h2 className="font-semibold text-amber-950">Eventi da attenzionare</h2>
+          <ul className="mt-2 space-y-2 text-sm text-amber-950">
+            {highlightedEvents.map((event) => (
+              <li key={event.id}>
+                <strong>{highlightedEventLabels[event.tipo]}</strong>{" "}
+                {typeof event.dettaglio.errore === "string"
+                  ? `Causa: ${event.dettaglio.errore}`
+                  : ""}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {notice && noticeMessages[notice] ? (
         <p
           className={`rounded-md p-3 text-sm ${
-            notice.endsWith("invalid") || notice.endsWith("incomplete")
+            notice.endsWith("invalid") ||
+            notice.endsWith("incomplete") ||
+            notice === "service_error"
               ? "bg-amber-50 text-amber-900"
               : "bg-green-50 text-green-900"
           }`}
         >
           {noticeMessages[notice]}
+          {notice === "service_error" && cause ? ` Causa: ${cause}` : ""}
         </p>
       ) : null}
 

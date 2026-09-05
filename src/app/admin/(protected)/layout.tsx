@@ -40,7 +40,15 @@ export default async function ProtectedAdminLayout({
           </form>
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-8">
+        {!process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ? (
+          <p className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            Configurazione mancante: NEXT_PUBLIC_WHATSAPP_NUMBER. I link WhatsApp
+            mostrati ai clienti non possono aprire la conversazione corretta.
+          </p>
+        ) : null}
+        {children}
+      </main>
     </div>
   );
 }
