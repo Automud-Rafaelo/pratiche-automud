@@ -12,16 +12,27 @@ import {
   isValidItalianTaxCode,
   isValidPhone,
   normalizeUppercaseValue,
-  type CustomerScreenId,
+  normalizeVehiclePlate,
 } from "@/lib/config/business-rules";
-import { findNearbyAgencies } from "@/lib/customer/agencies";
+import {
+  findNearbyAgencies,
+  geocodePostalCode,
+} from "@/lib/customer/agencies";
 import {
   loadCustomerPractice,
   recordCustomerEvent,
   recordCustomerEventOnce,
   updateCustomerPractice,
 } from "@/lib/customer/data";
-import { getVisibleCustomerScreen } from "@/lib/customer/flow";
+import {
+  getCustomerNavigationContext,
+  getVisibleCustomerScreen,
+} from "@/lib/customer/flow";
+import {
+  getNextCustomerScreen,
+  type CustomerNavigationContext,
+  type CustomerScreenId,
+} from "@/lib/customer/navigation";
 
 async function getActionContext(formData: FormData, expected: CustomerScreenId) {
   const token = formData.get("token");
@@ -38,29 +49,51 @@ async function getActionContext(formData: FormData, expected: CustomerScreenId) 
     expected,
   );
   if (allowedScreen !== expected) redirect(`/p/${token}`);
-  return { token, ...context };
+  return {
+    token,
+    ...context,
+    navigation: getCustomerNavigationContext(
+      context.practice,
+      context.events,
+    ),
+  };
 }
 
-function finishAction(token: string): never {
+function finishAction(
+  token: string,
+  screen: CustomerScreenId,
+  navigation: CustomerNavigationContext,
+): never {
   revalidatePath(`/p/${token}`);
-  redirect(`/p/${token}`);
+  const nextScreen = getNextCustomerScreen(screen, navigation);
+  redirect(nextScreen ? `/p/${token}?view=${nextScreen}#top` : `/p/${token}`);
 }
 
-function invalidAction(token: string, screen: CustomerScreenId): never {
-  redirect(`/p/${token}?view=${screen}&error=invalid`);
+function invalidAction(
+  token: string,
+  screen: CustomerScreenId,
+  error = "invalid",
+): never {
+  redirect(`/p/${token}?view=${screen}&error=${error}#top`);
 }
 
 export async function startCustomerFlowAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "welcome");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "welcome",
+  );
   if (practice.status === "creata") {
     await updateCustomerPractice(practice.id, { status: "step1_dati" });
     await recordCustomerEventOnce(practice.id, "link_aperto");
   }
-  finishAction(token);
+  finishAction(token, "welcome", navigation);
 }
 
 export async function saveOwnerAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "owner");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "owner",
+  );
   const value = formData.get("is_owner");
   if (value !== "yes" && value !== "no") invalidAction(token, "owner");
   await updateCustomerPractice(practice.id, {
@@ -69,16 +102,22 @@ export async function saveOwnerAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "is_proprietario",
   });
-  finishAction(token);
+  finishAction(token, "owner", {
+    ...navigation,
+    isOwner: value === "yes",
+  });
 }
 
 export async function acknowledgeOwnerNoticeAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "owner_notice");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "owner_notice",
+  );
   await recordCustomerEventOnce(
     practice.id,
     "proprietario_assente_avviso_visto",
   );
-  finishAction(token);
+  finishAction(token, "owner_notice", navigation);
 }
 
 async function saveTextField(
@@ -88,7 +127,10 @@ async function saveTextField(
   normalize: (value: string) => string = (value) => value.trim(),
   validate: (value: string) => boolean = (value) => value.length > 0,
 ) {
-  const { token, practice } = await getActionContext(formData, screen);
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    screen,
+  );
   const rawValue = formData.get(field);
   const value = typeof rawValue === "string" ? normalize(rawValue) : "";
   if (!validate(value)) invalidAction(token, screen);
@@ -96,7 +138,7 @@ async function saveTextField(
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: field,
   });
-  finishAction(token);
+  finishAction(token, screen, navigation);
 }
 
 export async function saveFirstNameAction(formData: FormData) {
@@ -128,62 +170,118 @@ export async function saveIbanAction(formData: FormData) {
 }
 
 export async function savePlateConfirmationAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "plate");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "plate",
+  );
   const decision = formData.get("plate_confirmation");
   if (decision !== "confirm" && decision !== "dispute") {
     invalidAction(token, "plate");
   }
 
   if (decision === "dispute") {
-    await recordCustomerEvent(practice.id, "targa_contestata");
+    await recordCustomerEvent(
+      practice.id,
+      "targa_contestata_richiesta",
+      { targa_operatore: practice.targa },
+    );
+    finishAction(token, "plate", {
+      ...navigation,
+      hasDisputedPlate: true,
+    });
   } else {
     await recordCustomerEvent(practice.id, "targa_confermata");
+    await updateCustomerPractice(practice.id, {
+      targa_cliente: null,
+      ...(practice.status === "step1_dati"
+        ? { status: "step2_agenzia" }
+        : {}),
+    });
     if (practice.status === "step1_dati") {
-      await updateCustomerPractice(practice.id, { status: "step2_agenzia" });
       await recordCustomerEvent(practice.id, "stato_aggiornato", {
         stato: "step2_agenzia",
       });
     }
+    finishAction(token, "plate", {
+      ...navigation,
+      hasDisputedPlate: false,
+    });
   }
-  finishAction(token);
 }
 
-export async function acknowledgePlateNoticeAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "plate_notice");
-  await recordCustomerEventOnce(
-    practice.id,
-    "targa_contestata_avviso_visto",
+export async function saveCustomerPlateAction(formData: FormData) {
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "customer_plate",
   );
+  const rawPlate = formData.get("targa_cliente");
+  const customerPlate =
+    typeof rawPlate === "string" ? normalizeVehiclePlate(rawPlate) : "";
+  if (!customerPlate) invalidAction(token, "customer_plate");
+
+  await recordCustomerEvent(practice.id, "targa_contestata", {
+    targa_operatore: practice.targa,
+    targa_cliente: customerPlate,
+  });
+  await updateCustomerPractice(practice.id, {
+    targa_cliente: customerPlate,
+    ...(practice.status === "step1_dati"
+      ? { status: "step2_agenzia" }
+      : {}),
+  });
   if (practice.status === "step1_dati") {
-    await updateCustomerPractice(practice.id, { status: "step2_agenzia" });
     await recordCustomerEvent(practice.id, "stato_aggiornato", {
       stato: "step2_agenzia",
     });
   }
-  finishAction(token);
+  finishAction(token, "customer_plate", {
+    ...navigation,
+    hasDisputedPlate: true,
+  });
 }
 
 export async function savePostalCodeAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "postal_code");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "postal_code",
+  );
   const rawValue = formData.get("cap");
   const postalCode = typeof rawValue === "string" ? rawValue.trim() : "";
   if (!isValidItalianPostalCode(postalCode)) {
     invalidAction(token, "postal_code");
   }
-  await updateCustomerPractice(practice.id, {
-    cap: postalCode,
-    agenzia_id: postalCode === practice.cap ? practice.agenzia_id : null,
-    status:
-      postalCode === practice.cap ? practice.status : "step2_agenzia",
-  });
+
+  const geocoding = await geocodePostalCode(practice.id, postalCode);
+  if (geocoding.status === "not_found") {
+    invalidAction(token, "postal_code", "postal_not_found");
+  }
+
+  const useAgencyFallback = geocoding.status === "unavailable";
+  await updateCustomerPractice(practice.id, { cap: postalCode });
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "cap",
   });
-  finishAction(token);
+  if (geocoding.status === "unavailable") {
+    await recordCustomerEvent(practice.id, "geocoding_fallito", {
+      cap: postalCode,
+      errore: geocoding.error,
+    });
+  } else {
+    await recordCustomerEvent(practice.id, "geocoding_riuscito", {
+      cap: postalCode,
+    });
+  }
+  finishAction(token, "postal_code", {
+    ...navigation,
+    useAgencyFallback,
+  });
 }
 
 export async function saveCoownershipAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "coownership");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "coownership",
+  );
   const value = formData.get("coownership");
   if (value !== "yes" && value !== "no") {
     invalidAction(token, "coownership");
@@ -192,31 +290,40 @@ export async function saveCoownershipAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "cointestata",
   });
-  finishAction(token);
+  finishAction(token, "coownership", {
+    ...navigation,
+    isCoOwned: value === "yes",
+  });
 }
 
 export async function acknowledgeCoownershipNoticeAction(formData: FormData) {
-  const { token, practice } = await getActionContext(
+  const { token, practice, navigation } = await getActionContext(
     formData,
     "coownership_notice",
   );
   await recordCustomerEventOnce(practice.id, "cointestatari_avviso_visto");
-  finishAction(token);
+  finishAction(token, "coownership_notice", navigation);
 }
 
 export async function saveKeysAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "keys");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "keys",
+  );
   const value = formData.get("both_keys");
   if (value !== "yes" && value !== "no") invalidAction(token, "keys");
   await updateCustomerPractice(practice.id, { due_chiavi: value === "yes" });
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "due_chiavi",
   });
-  finishAction(token);
+  finishAction(token, "keys", navigation);
 }
 
 export async function saveAgencyAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "agency");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "agency",
+  );
   const agencyId = formData.get("agency_id");
   if (typeof agencyId !== "string" || !practice.cap) {
     invalidAction(token, "agency");
@@ -224,13 +331,15 @@ export async function saveAgencyAction(formData: FormData) {
 
   const result = await findNearbyAgencies(practice.id, practice.cap);
   if (!result.ok) {
-    await recordCustomerEventOnce(
-      practice.id,
-      "geocoding_fallito",
-      { cap: practice.cap, errore: result.error },
-      { key: "cap", value: practice.cap },
-    );
-    finishAction(token);
+    if (result.reason === "not_found") {
+      invalidAction(token, "postal_code", "postal_not_found");
+    }
+    await recordCustomerEvent(practice.id, "geocoding_fallito", {
+      cap: practice.cap,
+      errore: result.error,
+    });
+    revalidatePath(`/p/${token}`);
+    redirect(`/p/${token}?view=agency_fallback#top`);
   }
   if (!result.agencies.some((agency) => agency.id === agencyId)) {
     invalidAction(token, "agency");
@@ -244,11 +353,11 @@ export async function saveAgencyAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step3_appuntamento",
   });
-  finishAction(token);
+  finishAction(token, "agency", navigation);
 }
 
 export async function continueWithoutAgencyAction(formData: FormData) {
-  const { token, practice } = await getActionContext(
+  const { token, practice, navigation } = await getActionContext(
     formData,
     "agency_fallback",
   );
@@ -259,11 +368,11 @@ export async function continueWithoutAgencyAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step3_appuntamento",
   });
-  finishAction(token);
+  finishAction(token, "agency_fallback", navigation);
 }
 
 export async function saveOwnerAvailabilityAction(formData: FormData) {
-  const { token, practice } = await getActionContext(
+  const { token, practice, navigation } = await getActionContext(
     formData,
     "owner_availability",
   );
@@ -279,11 +388,14 @@ export async function saveOwnerAvailabilityAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "conosce_orari_proprietario",
   });
-  finishAction(token);
+  finishAction(token, "owner_availability", {
+    ...navigation,
+    knowsOwnerAvailability: value === "yes",
+  });
 }
 
 export async function acknowledgeAvailabilityNoticeAction(formData: FormData) {
-  const { token, practice } = await getActionContext(
+  const { token, practice, navigation } = await getActionContext(
     formData,
     "availability_notice",
   );
@@ -291,11 +403,14 @@ export async function acknowledgeAvailabilityNoticeAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step4_ritiro",
   });
-  finishAction(token);
+  finishAction(token, "availability_notice", navigation);
 }
 
 export async function saveAppointmentPreferenceAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "appointment");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "appointment",
+  );
   const date = formData.get("preference_date");
   const slot = formData.get("preference_slot");
   const options = getAppointmentPreferenceOptions();
@@ -318,11 +433,11 @@ export async function saveAppointmentPreferenceAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step4_ritiro",
   });
-  finishAction(token);
+  finishAction(token, "appointment", navigation);
 }
 
 export async function savePickupLocationAction(formData: FormData) {
-  const { token, practice } = await getActionContext(
+  const { token, practice, navigation } = await getActionContext(
     formData,
     "pickup_location",
   );
@@ -337,7 +452,7 @@ export async function savePickupLocationAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "ubicazione_auto",
   });
-  finishAction(token);
+  finishAction(token, "pickup_location", navigation);
 }
 
 export async function savePickupAddressAction(formData: FormData) {
@@ -349,7 +464,10 @@ export async function savePickupAddressAction(formData: FormData) {
 }
 
 export async function savePickupPhoneAction(formData: FormData) {
-  const { token, practice } = await getActionContext(formData, "pickup_phone");
+  const { token, practice, navigation } = await getActionContext(
+    formData,
+    "pickup_phone",
+  );
   const rawPhone = formData.get("telefono_ritiro");
   const phone = typeof rawPhone === "string" ? rawPhone.trim() : "";
   if (!isValidPhone(phone)) {
@@ -365,5 +483,5 @@ export async function savePickupPhoneAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "completata",
   });
-  finishAction(token);
+  finishAction(token, "pickup_phone", navigation);
 }

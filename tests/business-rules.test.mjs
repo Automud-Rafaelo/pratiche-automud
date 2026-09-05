@@ -8,11 +8,15 @@ import {
   isValidItalianPostalCode,
   isValidItalianTaxCode,
   isValidPhone,
+  normalizeVehicleName,
 } from "../src/lib/config/business-rules.ts";
 
-test("validates Italian tax codes", () => {
+test("validates Italian tax-code format and check character", () => {
   assert.equal(isValidItalianTaxCode("RSSMRA80A01H501U"), true);
-  assert.equal(isValidItalianTaxCode("RSSMRA80A01H501"), false);
+  assert.equal(isValidItalianTaxCode("VRDLGI85T10A562C"), true);
+  assert.equal(isValidItalianTaxCode("BNCLGU80A01H501A"), true);
+  assert.equal(isValidItalianTaxCode("RSSMRA80A01H501A"), false);
+  assert.equal(isValidItalianTaxCode("MMMMMMMMMMMMMMMM"), false);
 });
 
 test("validates IBAN length and mod-97 checksum", () => {
@@ -26,6 +30,10 @@ test("validates Italian postal codes and phone numbers", () => {
   assert.equal(isValidItalianPostalCode("0100"), false);
   assert.equal(isValidPhone("+39 333 123 4567"), true);
   assert.equal(isValidPhone("123"), false);
+});
+
+test("capitalizes every word in vehicle make and model", () => {
+  assert.equal(normalizeVehicleName("  audi   a3 "), "Audi A3");
 });
 
 test("returns exactly three appointment days and skips Sunday", () => {

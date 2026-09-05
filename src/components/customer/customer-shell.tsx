@@ -4,7 +4,10 @@ import { customerCopy } from "@/lib/copy/customer";
 
 export function CustomerShell({ children }: { children: ReactNode }) {
   return (
-    <main className="relative min-h-dvh overflow-hidden bg-[#FFF8EA] text-[#3B2314]">
+    <main
+      className="relative min-h-dvh overflow-hidden bg-[#FFF8EA] text-[#3B2314]"
+      id="top"
+    >
       <div className="absolute inset-x-0 bottom-0 h-40 opacity-40" aria-hidden="true">
         <div className="absolute -bottom-20 -left-16 h-44 w-64 rounded-[50%] bg-[#F9DDB5]" />
         <div className="absolute -bottom-24 left-1/3 h-48 w-72 rounded-[50%] bg-[#F9DDB5]" />

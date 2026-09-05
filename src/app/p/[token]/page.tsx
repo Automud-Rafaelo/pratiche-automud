@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { AgencyQuestion } from "@/components/customer/agency-question";
 import { AppointmentQuestion } from "@/components/customer/appointment-question";
@@ -10,23 +11,28 @@ import {
 } from "@/components/customer/question-frame";
 import { TextQuestion } from "@/components/customer/text-question";
 import { formatMoney } from "@/lib/admin/format";
-import type { AgencyRow, EventRow, PracticeRow } from "@/lib/admin/types";
+import type { AgencyRow } from "@/lib/admin/types";
 import {
   BUSINESS_RULES,
   getAppointmentPreferenceOptions,
-  type CustomerScreenId,
 } from "@/lib/config/business-rules";
 import { customerCopy } from "@/lib/copy/customer";
 import { findNearbyAgencies } from "@/lib/customer/agencies";
 import {
   loadCustomerPractice,
+  recordCustomerEvent,
   recordCustomerEventOnce,
 } from "@/lib/customer/data";
 import {
+  getCustomerNavigationContext,
   getCustomerProgress,
-  getPreviousCustomerScreen,
   getVisibleCustomerScreen,
 } from "@/lib/customer/flow";
+import {
+  getPreviousCustomerScreen,
+  type CustomerNavigationContext,
+  type CustomerScreenId,
+} from "@/lib/customer/navigation";
 import { getWhatsAppUrl } from "@/lib/customer/whatsapp";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -35,11 +41,11 @@ import {
   acknowledgeAvailabilityNoticeAction,
   acknowledgeCoownershipNoticeAction,
   acknowledgeOwnerNoticeAction,
-  acknowledgePlateNoticeAction,
   continueWithoutAgencyAction,
   saveAgencyAction,
   saveAppointmentPreferenceAction,
   saveCoownershipAction,
+  saveCustomerPlateAction,
   saveFirstNameAction,
   saveIbanAction,
   saveKeysAction,
@@ -100,20 +106,44 @@ function WhatsAppLink({ children }: { children: string }) {
 function getBackHref(
   token: string,
   screen: CustomerScreenId,
-  practice: PracticeRow,
-  events: EventRow[],
+  navigation: CustomerNavigationContext,
 ) {
-  const previous = getPreviousCustomerScreen(screen, practice, events);
-  return previous ? `/p/${token}?view=${previous}` : null;
+  const previous = getPreviousCustomerScreen(screen, navigation);
+  return previous ? `/p/${token}?view=${previous}#top` : null;
 }
 
-function getServerErrorMessage(screen: CustomerScreenId) {
+function getServerErrorMessage(screen: CustomerScreenId, errorCode?: string) {
   if (screen === "tax_code") return customerCopy.taxCode.error;
   if (screen === "iban") return customerCopy.iban.error;
-  if (screen === "postal_code") return customerCopy.postalCode.error;
+  if (screen === "postal_code") {
+    return errorCode === "postal_not_found"
+      ? customerCopy.postalCode.notFoundError
+      : customerCopy.postalCode.error;
+  }
   if (screen === "pickup_phone") return customerCopy.pickupPhone.error;
   return customerCopy.temporaryError.description;
 }
+
+type TextScreenId =
+  | "first_name"
+  | "last_name"
+  | "tax_code"
+  | "iban"
+  | "customer_plate"
+  | "postal_code"
+  | "pickup_address"
+  | "pickup_phone";
+
+const CUSTOMER_TEXT_FIELDS: Record<TextScreenId, string> = {
+  first_name: "nome",
+  last_name: "cognome",
+  tax_code: "codice_fiscale",
+  iban: "iban",
+  customer_plate: "targa_cliente",
+  postal_code: "cap",
+  pickup_address: "indirizzo_ritiro",
+  pickup_phone: "telefono_ritiro",
+};
 
 function TextScreenPage({
   action,
@@ -131,10 +161,11 @@ function TextScreenPage({
   inputMode = "text",
   autoComplete,
   autoCapitalize,
+  warningMessage,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   token: string;
-  screen: CustomerScreenId;
+  screen: TextScreenId;
   title: string;
   description: string;
   label: string;
@@ -143,13 +174,20 @@ function TextScreenPage({
   progress: { current: number; total: number };
   backHref: string | null;
   errorMessage: string | null;
-  validationKind?: "text" | "tax_code" | "iban" | "postal_code" | "phone";
+  validationKind?:
+    | "text"
+    | "tax_code"
+    | "iban"
+    | "vehicle_plate"
+    | "postal_code"
+    | "phone";
   inputMode?: "text" | "numeric" | "tel";
   autoComplete?: string;
   autoCapitalize?: "none" | "characters" | "words";
+  warningMessage?: string;
 }) {
   return (
-    <CustomerShell>
+    <CustomerShell key={screen}>
       <QuestionFrame
         backHref={backHref}
         description={description}
@@ -162,6 +200,7 @@ function TextScreenPage({
           </p>
         ) : null}
         <TextQuestion
+          key={screen}
           action={action}
           autoCapitalize={autoCapitalize}
           autoComplete={autoComplete}
@@ -179,25 +218,12 @@ function TextScreenPage({
           }
           inputMode={inputMode}
           label={label}
-          name={
-            screen === "first_name"
-              ? "nome"
-              : screen === "last_name"
-                ? "cognome"
-                : screen === "tax_code"
-                  ? "codice_fiscale"
-                  : screen === "postal_code"
-                    ? "cap"
-                    : screen === "pickup_address"
-                      ? "indirizzo_ritiro"
-                      : screen === "pickup_phone"
-                        ? "telefono_ritiro"
-                        : "iban"
-          }
+          name={CUSTOMER_TEXT_FIELDS[screen]}
           placeholder={placeholder}
           screen={screen}
           token={token}
           validationKind={validationKind}
+          warningMessage={warningMessage}
         />
       </QuestionFrame>
     </CustomerShell>
@@ -245,7 +271,7 @@ export default async function CustomerPage({
 
   if (!context) {
     return (
-      <CustomerShell>
+      <CustomerShell key="invalid">
         <section className="pt-8 text-center">
           <h1 className="text-[28px] font-bold leading-tight">
             {customerCopy.invalidLink.title}
@@ -262,13 +288,16 @@ export default async function CustomerPage({
   if (practice.status === "creata") {
     await recordCustomerEventOnce(practice.id, "link_aperto");
   }
-  let screen = getVisibleCustomerScreen(practice, events, query.view);
-  const progress = getCustomerProgress(screen, practice.is_proprietario);
+  const screen = getVisibleCustomerScreen(practice, events, query.view);
+  const navigation = getCustomerNavigationContext(practice, events);
+  const progress = getCustomerProgress(screen, navigation);
   const frameProps = {
     progress,
-    backHref: getBackHref(token, screen, practice, events),
+    backHref: getBackHref(token, screen, navigation),
   };
-  const errorMessage = query.error === "invalid" ? getServerErrorMessage(screen) : null;
+  const errorMessage = query.error
+    ? getServerErrorMessage(screen, query.error)
+    : null;
   const error = errorMessage ? (
     <p className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
       {errorMessage}
@@ -277,7 +306,7 @@ export default async function CustomerPage({
 
   if (screen === "welcome") {
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame
           {...frameProps}
           description={customerCopy.welcome.description}
@@ -311,10 +340,11 @@ export default async function CustomerPage({
 
   if (screen === "owner") {
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...customerCopy.owner}>
           {error}
           <ChoiceQuestion
+            key={screen}
             action={saveOwnerAction}
             defaultValue={
               practice.is_proprietario === null
@@ -338,7 +368,7 @@ export default async function CustomerPage({
 
   if (screen === "owner_notice") {
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...customerCopy.ownerNotice}>
           <ActionButton
             action={acknowledgeOwnerNoticeAction}
@@ -366,6 +396,9 @@ export default async function CustomerPage({
       : customerCopy.iban.description;
     return <TextScreenPage {...frameProps} {...customerCopy.iban} action={saveIbanAction} autoCapitalize="characters" autoComplete="off" defaultValue={practice.iban ?? ""} description={description} errorMessage={errorMessage} screen={screen} token={token} validationKind="iban" />;
   }
+  if (screen === "customer_plate") {
+    return <TextScreenPage {...frameProps} {...customerCopy.customerPlate} action={saveCustomerPlateAction} autoCapitalize="characters" autoComplete="off" defaultValue={practice.targa_cliente ?? ""} errorMessage={errorMessage} screen={screen} token={token} validationKind="vehicle_plate" warningMessage={customerCopy.customerPlate.warning} />;
+  }
   if (screen === "postal_code") {
     return <TextScreenPage {...frameProps} {...customerCopy.postalCode} action={savePostalCodeAction} autoCapitalize="none" autoComplete="postal-code" defaultValue={practice.cap ?? ""} errorMessage={errorMessage} inputMode="numeric" screen={screen} token={token} validationKind="postal_code" />;
   }
@@ -381,12 +414,13 @@ export default async function CustomerPage({
 
   if (screen === "plate") {
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...customerCopy.plate}>
           <p className="mb-5 text-center text-5xl font-extrabold tracking-wider">
             {practice.targa}
           </p>
           <ChoiceQuestion
+            key={screen}
             action={savePlateConfirmationAction}
             name="plate_confirmation"
             options={[
@@ -401,15 +435,13 @@ export default async function CustomerPage({
     );
   }
 
-  if (screen === "plate_notice" || screen === "coownership_notice" || screen === "availability_notice") {
+  if (screen === "coownership_notice" || screen === "availability_notice") {
     const notice =
-      screen === "plate_notice"
-        ? { copy: customerCopy.plateNotice, action: acknowledgePlateNoticeAction }
-        : screen === "coownership_notice"
-          ? { copy: customerCopy.coownershipNotice, action: acknowledgeCoownershipNoticeAction }
-          : { copy: customerCopy.availabilityNotice, action: acknowledgeAvailabilityNoticeAction };
+      screen === "coownership_notice"
+        ? { copy: customerCopy.coownershipNotice, action: acknowledgeCoownershipNoticeAction }
+        : { copy: customerCopy.availabilityNotice, action: acknowledgeAvailabilityNoticeAction };
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...notice.copy}>
           <ActionButton
             action={notice.action}
@@ -430,10 +462,11 @@ export default async function CustomerPage({
           ? { copy: customerCopy.keys, action: saveKeysAction, name: "both_keys", value: practice.due_chiavi }
           : { copy: customerCopy.ownerAvailability, action: saveOwnerAvailabilityAction, name: "knows_availability", value: practice.conosce_orari_proprietario };
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...definition.copy}>
           {error}
           <ChoiceQuestion
+            key={screen}
             action={definition.action}
             defaultValue={definition.value === null ? undefined : definition.value ? "yes" : "no"}
             name={definition.name}
@@ -452,20 +485,29 @@ export default async function CustomerPage({
   if (screen === "agency") {
     const nearby = practice.cap
       ? await findNearbyAgencies(practice.id, practice.cap)
-      : { ok: false as const, error: "CAP assente" };
+      : { ok: false as const, reason: "not_found" as const, error: "CAP assente" };
     if (!nearby.ok) {
+      if (nearby.reason === "not_found") {
+        redirect(`/p/${token}?view=postal_code&error=postal_not_found#top`);
+      }
       if (practice.cap) {
-        await recordCustomerEventOnce(
+        await recordCustomerEvent(
           practice.id,
           "geocoding_fallito",
           { cap: practice.cap, errore: nearby.error },
-          { key: "cap", value: practice.cap },
         );
       }
-      screen = "agency_fallback";
+      const fallbackNavigation = {
+        ...navigation,
+        useAgencyFallback: true,
+      };
       return (
-        <CustomerShell>
-          <QuestionFrame {...frameProps} {...customerCopy.agencyFallback}>
+        <CustomerShell key="agency_fallback">
+          <QuestionFrame
+            backHref={getBackHref(token, "agency_fallback", fallbackNavigation)}
+            progress={getCustomerProgress("agency_fallback", fallbackNavigation)}
+            {...customerCopy.agencyFallback}
+          >
             <ActionButton
               action={continueWithoutAgencyAction}
               label={customerCopy.actions.continue}
@@ -487,9 +529,17 @@ export default async function CustomerPage({
     }
 
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...customerCopy.agency}>
           {error}
+          {nearby.noneWithinRadius ? (
+            <p className="mb-4 rounded-2xl bg-[#F9DDB5]/60 px-4 py-3 text-sm font-medium leading-5">
+              {customerCopy.agency.outsideRadius.replace(
+                "{radius}",
+                String(BUSINESS_RULES.nearbyAgencies.radiusKm),
+              )}
+            </p>
+          ) : null}
           <AgencyQuestion
             action={saveAgencyAction}
             agencies={nearby.agencies}
@@ -506,7 +556,7 @@ export default async function CustomerPage({
 
   if (screen === "agency_fallback") {
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...customerCopy.agencyFallback}>
           <ActionButton
             action={continueWithoutAgencyAction}
@@ -525,7 +575,7 @@ export default async function CustomerPage({
       label: formatAppointmentDate(option.date),
     }));
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...customerCopy.appointment}>
           {error}
           <AppointmentQuestion
@@ -542,10 +592,11 @@ export default async function CustomerPage({
 
   if (screen === "pickup_location") {
     return (
-      <CustomerShell>
+      <CustomerShell key={screen}>
         <QuestionFrame {...frameProps} {...customerCopy.pickupLocation}>
           {error}
           <ChoiceQuestion
+            key={screen}
             action={savePickupLocationAction}
             defaultValue={practice.ubicazione_auto ?? undefined}
             name="pickup_location"
@@ -569,11 +620,11 @@ export default async function CustomerPage({
     ? formatAppointmentDate(practice.preferenza_data)
     : null;
   return (
-    <CustomerShell>
+    <CustomerShell key={screen}>
       <QuestionFrame
         backHref={null}
         description={undefined}
-        progress={getCustomerProgress("complete", practice.is_proprietario)}
+        progress={getCustomerProgress("complete", navigation)}
         title={customerCopy.complete.title}
       >
         <ul className="space-y-3 rounded-3xl bg-white p-5 text-[17px] shadow-sm ring-1 ring-[#E5DED2]">

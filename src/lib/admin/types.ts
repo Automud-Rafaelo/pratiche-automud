@@ -14,6 +14,7 @@ export type PracticeRow = {
   tipo_pratica: PracticeType;
   prezzo_concordato: number;
   targa: string;
+  targa_cliente: string | null;
   marca: string;
   modello: string;
   is_proprietario: boolean | null;
