@@ -21,6 +21,7 @@ Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
 - Mantenere tutte le regole di business in `src/lib/config/business-rules.ts`, senza duplicarle nei componenti, nelle route o nei servizi.
 - Non introdurre servizi esterni diversi da Supabase e Google Maps Platform.
 - Ogni chiamata a Google Maps o Supabase che fallisce deve essere registrata nel log server e produrre nel pannello un messaggio visibile all'operatore con la causa. Non lasciare mai uno stato `pending` senza una spiegazione operativa.
+- Ogni task che modifica `/p/` deve concludersi con la frase “Eseguire la checklist di test manuale” nel riepilogo.
 
 ## Stack obbligatorio
 
@@ -73,6 +74,10 @@ Lo step 1 passa direttamente a `step2_agenzia`. Le verifiche non modificano lo s
 
 Il flusso seguente è implementato in `/p/[token]`.
 
+### Navigazione
+
+L'ordine fisso delle schermate è definito in un unico file. “Indietro” apre la schermata precedente applicabile, saltando quelle che non appartengono al percorso corrente. Dopo ogni salvataggio si apre sempre la schermata successiva applicabile nell'ordine fisso; la ricerca del primo campo vuoto è usata soltanto per riprendere il percorso quando il cliente riapre il link senza un parametro di navigazione. Ogni schermata viene renderizzata con una `key` univoca uguale al proprio identificatore, così i componenti non conservano lo stato della schermata precedente. Ogni server action legge e salva soltanto il campo appartenente alla propria schermata, oltre agli eventuali aggiornamenti di stato ed eventi previsti.
+
 ### Apertura
 
 Il cliente apre `/p/[token]` e vede targa, marca, modello e prezzo concordato. Risponde alla domanda “Sei tu il proprietario dell'auto?”. Se risponde no, vede un avviso: il proprietario dovrà essere fisicamente presente in agenzia. Il cliente può comunque proseguire.
@@ -83,11 +88,11 @@ Mostrare una domanda per schermata:
 
 1. nome;
 2. cognome;
-3. codice fiscale, con validazione del formato italiano a 16 caratteri;
+3. codice fiscale, con validazione del formato italiano a 16 caratteri e del carattere di controllo calcolato con la somma dei valori delle posizioni dispari e pari modulo 26;
 4. IBAN, con lunghezza specifica per paese e checksum mod-97; se chi compila non è il proprietario, spiegare che il conto deve essere intestato al proprietario;
 5. conferma della targa mostrata dall'applicazione.
 
-Il cliente non digita la targa. Sceglie “Confermo” oppure “Non è la mia targa”. Nel secondo caso registrare un evento `targa_contestata`, evidenziarlo nel pannello admin e lasciare proseguire la pratica. Al completamento dello step impostare direttamente `step2_agenzia`.
+Il cliente vede la targa inserita dall'operatore e sceglie “Confermo” oppure “Non è la mia targa”. Nel secondo caso mostrare una schermata separata con la domanda “Scrivi la targa che vedi sul libretto”. Normalizzare il valore come la targa inserita dall'operatore; un formato diverso da quello moderno produce un avviso non bloccante. Salvare il valore in `targa_cliente`, registrare un evento `targa_contestata` contenente sia `targa_operatore` sia `targa_cliente`, evidenziarlo nel pannello admin e lasciare proseguire la pratica. Al completamento dello step impostare direttamente `step2_agenzia`.
 
 La targa viene validata quando l'operatore crea la pratica. Normalizzarla in maiuscolo rimuovendo spazi e trattini. Se non rispetta il formato moderno `AA123AA`, mostrare un avviso ma consentire il salvataggio.
 
@@ -101,9 +106,9 @@ Chiedere:
 
 Geocodificare il CAP passando prima da `cap_coordinate`. Mostrare fino a quattro agenzie attive entro 25 km, ordinate per distanza e senza preferenze ulteriori. Per ogni agenzia mostrare nome, indirizzo, distanza e telefono. La distanza si calcola localmente con Haversine.
 
-Se non esistono agenzie entro 25 km, mostrare comunque le quattro agenzie attive più vicine, rendere evidente la distanza e registrare l'evento `nessuna_agenzia_nel_raggio`.
+Se non esistono agenzie entro il raggio configurato, mostrare comunque le quattro agenzie attive più vicine, rendere evidente la distanza, registrare l'evento `nessuna_agenzia_nel_raggio` e mostrare sopra le card: “Non abbiamo agenzie entro 25 km da te. Queste sono le più vicine: se sono troppo lontane, scrivici su WhatsApp e ne cerchiamo una insieme.” Il valore del raggio nel testo proviene da `business-rules.ts`.
 
-Se il geocoding fallisce, mostrare una schermata rassicurante, proseguire senza `agenzia_id` e registrare `geocoding_fallito` con CAP e causa. Il pannello deve rendere evidente questo evento.
+Se Google Geocoding restituisce `ZERO_RESULTS` o non fornisce coordinate, restare sulla schermata CAP con l'errore “Non troviamo questo CAP, controlla e riprova” e non registrare `geocoding_fallito`. Soltanto se il servizio non è disponibile per chiave, quota, rete o altro errore operativo mostrare la schermata rassicurante, proseguire senza `agenzia_id` e registrare `geocoding_fallito` con CAP e causa. Il pannello deve rendere evidente questo evento.
 
 ### Step 3 — Preferenza appuntamento
 
@@ -182,7 +187,7 @@ Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome
 
 ### `/admin/pratiche/nuova`
 
-Form con `tipo_pratica`, `prezzo_concordato`, `targa`, `marca` e `modello`. Normalizza la targa e segnala senza bloccare un formato diverso da `AA123AA`. Al salvataggio genera il token e mostra il link completo `/p/[token]`, costruito usando `NEXT_PUBLIC_APP_URL`, con un bottone “Copia link”.
+Form con `tipo_pratica`, `prezzo_concordato`, `targa`, `marca` e `modello`. Normalizza la targa e segnala senza bloccare un formato diverso da `AA123AA`. Normalizza marca e modello con l'iniziale maiuscola di ogni parola, per esempio `audi a3` diventa `Audi A3`. Al salvataggio genera il token e mostra il link completo `/p/[token]`, costruito usando `NEXT_PUBLIC_APP_URL`, con un bottone “Copia link”.
 
 ### `/admin/pratiche/[id]`
 
@@ -233,6 +238,7 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 - `tipo_pratica`: `dini` oppure `atto_demo`, inserito dall'operatore.
 - `prezzo_concordato`: numerico, inserito dall'operatore.
 - `targa`, `marca`, `modello`: testo, inserito dall'operatore; il cliente vede i dati e conferma o contesta la targa.
+- `targa_cliente`: testo nullable, compilato soltanto quando il cliente contesta la targa dell'operatore.
 - Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `cap`, `cointestata`, `due_chiavi`, `agenzia_id`, `preferenza_data`, `preferenza_fascia`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `telefono_ritiro`.
 - Verifiche nullable con semantica anomalia/ok/non verificato: `check_intestatario_non_corrisponde`, `check_cdp_cartaceo`, `check_revisione_scaduta`, `check_km_scalati`, `check_fermo_amministrativo`.
 - Campi operatore nullable: `appuntamento_confermato_data`, `appuntamento_confermato_fascia`, `verifiche_completate_at`, `note_operatore`.
@@ -272,11 +278,27 @@ Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_a
 - stati, tipi pratica, fasce e ubicazioni consentiti;
 - semantica e nomi delle verifiche;
 - normalizzazione e validazione non bloccante della targa;
+- normalizzazione di marca e modello con iniziale maiuscola per parola;
 - raggio di 25 km, massimo quattro agenzie e fallback alle quattro più vicine;
 - calendario a tre giorni, esclusione domenica, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
 - durata e rate limit della sessione admin;
 - normalizzazione della chiave di deduplicazione delle agenzie.
 - validazione completa di codice fiscale, IBAN, CAP e telefono, batch Places e formula di Haversine.
+
+## Test manuale del flusso cliente
+
+Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
+
+1. completare l'intero percorso con dati validi;
+2. verificare che un codice fiscale errato, incluso il carattere di controllo, e un IBAN errato vengano rifiutati;
+3. usare “Indietro” da ogni schermata e poi “Continua”, verificando che ogni campo mostri e salvi esclusivamente il proprio valore;
+4. chiudere il browser a metà percorso e riaprire lo stesso link, verificando la ripresa dal primo dato mancante;
+5. riaprire il link dopo il completamento e verificare che compaia sempre la schermata finale;
+6. completare il ramo proprietario “No” con orari del proprietario sconosciuti;
+7. inserire un CAP inesistente e verificare che si resti sulla domanda del CAP senza evento `geocoding_fallito`;
+8. usare un CAP senza agenzie nel raggio e verificare avviso, quattro opzioni più vicine ed evento `nessuna_agenzia_nel_raggio`;
+9. contestare la targa, inserire quella del libretto e verificare normalizzazione, avviso non bloccante ed evento con entrambe le targhe;
+10. controllare nel pannello admin che tutti i dati e gli eventi siano corretti e che le targhe operatore/cliente siano evidenti.
 
 ## Variabili d'ambiente
 
@@ -292,7 +314,7 @@ Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_a
 
 ## Stato di avanzamento
 
-Ultimo aggiornamento: 4 settembre 2026.
+Ultimo aggiornamento: 5 settembre 2026.
 
 Completato:
 
@@ -300,7 +322,7 @@ Completato:
 - dipendenza `@supabase/supabase-js`;
 - specifica aggiornata al flusso cliente senza verifiche bloccanti;
 - regole di business centralizzate aggiornate;
-- migration iniziale, migration del flusso operatore, migration di supporto admin e migration del flusso cliente;
+- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente e migration per `targa_cliente`;
 - autenticazione admin con cookie firmato, scadenza a 12 ore e rate limit persistente per IP;
 - lista pratiche con filtro “Da verificare” e indicatori di attenzione;
 - creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
@@ -308,13 +330,17 @@ Completato:
 - import idempotente di `data/agenzie.csv`, arricchimento tramite Places API (New), ripresa delle righe `pending` e attivazione/disattivazione;
 - accesso admin a Supabase esclusivamente server-side tramite service role;
 - flusso cliente completo `/p/[token]`, mobile-first, con una domanda per schermata, ripresa automatica e testi centralizzati;
-- validazione server e browser di codice fiscale, IBAN, CAP e telefono;
+- navigazione cliente basata su un ordine fisso, con precedente/successiva applicabile e ripresa separata dal primo dato mancante;
+- validazione server e browser di codice fiscale, incluso il carattere di controllo, IBAN, CAP e telefono;
+- gestione distinta di CAP inesistente e indisponibilità del servizio Geocoding;
+- acquisizione della targa indicata dal cliente e visualizzazione delle due targhe nel pannello;
+- normalizzazione di marca e modello alla creazione della pratica;
 - geocoding CAP con cache, calcolo Haversine, fallback senza agenzia ed eventi di attenzione;
 - calendario server-side basato esclusivamente su `getAppointmentPreferenceOptions`;
 - pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
 - import Places in batch da dieci con riepilogo e causa degli errori;
-- test automatici per validazioni, calendario e Haversine;
+- test automatici per navigazione, validazioni, calendario e Haversine;
 - `.env.example` completo;
 - istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.
 

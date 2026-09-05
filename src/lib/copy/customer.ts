@@ -50,7 +50,8 @@ export const customerCopy = {
     description: "Ci serve per preparare i documenti del passaggio.",
     label: "Codice fiscale",
     placeholder: "RSSMRA80A01H501U",
-    error: "Controlla il codice fiscale: deve avere 16 caratteri validi.",
+    error:
+      "Controlla il codice fiscale: formato o carattere di controllo non corretti.",
   },
   iban: {
     title: "Su quale conto inviamo il bonifico?",
@@ -66,10 +67,13 @@ export const customerCopy = {
     confirm: "Sì, confermo",
     dispute: "No, non è questa",
   },
-  plateNotice: {
-    title: "Grazie della segnalazione",
-    description:
-      "Ok, lo segnaliamo al tuo referente, intanto andiamo avanti.",
+  customerPlate: {
+    title: "Scrivi la targa che vedi sul libretto",
+    description: "La segnaleremo al tuo referente e intanto andiamo avanti.",
+    label: "Targa corretta",
+    placeholder: "AA123AA",
+    warning:
+      "Questa targa ha un formato diverso da quello moderno: puoi continuare comunque.",
   },
   postalCode: {
     title: "Qual è il tuo CAP?",
@@ -77,6 +81,7 @@ export const customerCopy = {
     label: "CAP",
     placeholder: "00000",
     error: "Inserisci un CAP di 5 cifre.",
+    notFoundError: "Non troviamo questo CAP, controlla e riprova.",
   },
   coownership: {
     title: "L’auto è intestata a più persone?",
@@ -100,6 +105,8 @@ export const customerCopy = {
     description: "Ti mostriamo le opzioni più vicine al CAP che hai indicato.",
     distance: "km",
     noChoice: "Non ti va bene nessuna? Scrivici su WhatsApp",
+    outsideRadius:
+      "Non abbiamo agenzie entro {radius} km da te. Queste sono le più vicine: se sono troppo lontane, scrivici su WhatsApp e ne cerchiamo una insieme.",
   },
   agencyFallback: {
     title: "Ti aiutiamo noi a scegliere l’agenzia",

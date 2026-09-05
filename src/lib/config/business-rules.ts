@@ -27,31 +27,6 @@ export const ATTENTION_EVENT_TYPES = [
   "external_service_error",
 ] as const;
 
-export const CUSTOMER_SCREEN_IDS = [
-  "welcome",
-  "owner",
-  "owner_notice",
-  "first_name",
-  "last_name",
-  "tax_code",
-  "iban",
-  "plate",
-  "plate_notice",
-  "postal_code",
-  "coownership",
-  "coownership_notice",
-  "keys",
-  "agency",
-  "agency_fallback",
-  "owner_availability",
-  "availability_notice",
-  "appointment",
-  "pickup_location",
-  "pickup_address",
-  "pickup_phone",
-  "complete",
-] as const;
-
 export const BUSINESS_RULES = {
   customerToken: {
     minimumLength: 32,
@@ -96,6 +71,17 @@ export function normalizeVehiclePlate(value: string) {
   return value.toUpperCase().replace(/[\s-]+/g, "");
 }
 
+export function normalizeVehicleName(value: string) {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((word) =>
+      word ? `${word[0].toUpperCase()}${word.slice(1).toLowerCase()}` : word,
+    )
+    .join(" ");
+}
+
 export function normalizeAgencyKeyPart(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -105,9 +91,63 @@ export function normalizeUppercaseValue(value: string) {
 }
 
 export function isValidItalianTaxCode(value: string) {
-  return BUSINESS_RULES.validation.italianTaxCodePattern.test(
-    normalizeUppercaseValue(value),
-  );
+  const normalized = normalizeUppercaseValue(value);
+  if (!BUSINESS_RULES.validation.italianTaxCodePattern.test(normalized)) {
+    return false;
+  }
+
+  const oddValues: Record<string, number> = {
+    0: 1,
+    1: 0,
+    2: 5,
+    3: 7,
+    4: 9,
+    5: 13,
+    6: 15,
+    7: 17,
+    8: 19,
+    9: 21,
+    A: 1,
+    B: 0,
+    C: 5,
+    D: 7,
+    E: 9,
+    F: 13,
+    G: 15,
+    H: 17,
+    I: 19,
+    J: 21,
+    K: 2,
+    L: 4,
+    M: 18,
+    N: 20,
+    O: 11,
+    P: 3,
+    Q: 6,
+    R: 8,
+    S: 12,
+    T: 14,
+    U: 16,
+    V: 10,
+    W: 22,
+    X: 25,
+    Y: 24,
+    Z: 23,
+  };
+
+  let checksum = 0;
+  for (let index = 0; index < 15; index += 1) {
+    const character = normalized[index];
+    if (index % 2 === 0) {
+      checksum += oddValues[character];
+    } else {
+      checksum += /\d/.test(character)
+        ? Number(character)
+        : character.charCodeAt(0) - 65;
+    }
+  }
+
+  return String.fromCharCode(65 + (checksum % 26)) === normalized[15];
 }
 
 export function isValidItalianPostalCode(value: string) {
@@ -252,4 +292,3 @@ export type AppointmentSlot = (typeof APPOINTMENT_SLOTS)[number];
 export type PickupLocation = (typeof PICKUP_LOCATIONS)[number];
 export type AgencyImportStatus = (typeof AGENCY_IMPORT_STATUSES)[number];
 export type VerificationField = (typeof VERIFICATION_FIELDS)[number];
-export type CustomerScreenId = (typeof CUSTOMER_SCREEN_IDS)[number];

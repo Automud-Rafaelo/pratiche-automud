@@ -36,8 +36,9 @@ Le migration in `supabase/migrations` vengono applicate in ordine:
 
 1. `20260904130000_initial_schema.sql` crea lo schema iniziale;
 2. `20260904140000_operator_workflow.sql` aggiorna stati, verifiche, appuntamenti e deduplicazione agenzie;
-3. `20260904150000_admin_support.sql` aggiunge il rate limiting della login e consente le righe CSV prive di CAP.
-4. `20260904160000_customer_flow.sql` aggiunge gli errori import visibili e gli avvisi operatore per i servizi esterni.
+3. `20260904150000_admin_support.sql` aggiunge il rate limiting della login e consente le righe CSV prive di CAP;
+4. `20260904160000_customer_flow.sql` aggiunge gli errori import visibili e gli avvisi operatore per i servizi esterni;
+5. `20260905090000_customer_plate.sql` aggiunge la targa indicata dal cliente quando contesta quella dell'operatore.
 
 `npx supabase db push` applica soltanto le migration non ancora eseguite. Le tabelle hanno Row Level Security attiva e nessuna policy pubblica: il pannello usa la service role key esclusivamente lato server.
 

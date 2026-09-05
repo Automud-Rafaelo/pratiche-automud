@@ -13,13 +13,14 @@ export type NearbyAgency = Pick<
   "id" | "nome" | "indirizzo" | "telefono"
 > & { distanceKm: number };
 
-type Coordinates = { lat: number; lng: number };
+export type Coordinates = { lat: number; lng: number };
 
-type GeocodingResult =
-  | { ok: true; coordinates: Coordinates }
-  | { ok: false; error: string };
+export type GeocodingResult =
+  | { status: "ok"; coordinates: Coordinates }
+  | { status: "not_found"; error: string }
+  | { status: "unavailable"; error: string };
 
-async function geocodePostalCode(
+export async function geocodePostalCode(
   practiceId: string,
   postalCode: string,
 ): Promise<GeocodingResult> {
@@ -38,11 +39,11 @@ async function geocodePostalCode(
       practiceId,
       context: { cap: postalCode },
     });
-    return { ok: false, error: message };
+    return { status: "unavailable", error: message };
   }
   if (cached) {
     return {
-      ok: true,
+      status: "ok",
       coordinates: { lat: Number(cached.lat), lng: Number(cached.lng) },
     };
   }
@@ -56,7 +57,7 @@ async function geocodePostalCode(
       practiceId,
       context: { cap: postalCode },
     });
-    return { ok: false, error: message };
+    return { status: "unavailable", error: message };
   }
 
   const parameters = new URLSearchParams({
@@ -79,12 +80,18 @@ async function geocodePostalCode(
       }>;
     };
 
+    if (payload.status === "ZERO_RESULTS") {
+      return {
+        status: "not_found",
+        error: "Google Geocoding: CAP non trovato",
+      };
+    }
+
     if (!response.ok || payload.status !== "OK") {
       const reason =
         payload.error_message ||
-        (payload.status === "ZERO_RESULTS"
-          ? "CAP non trovato"
-          : payload.status || `HTTP ${response.status}`);
+        payload.status ||
+        `HTTP ${response.status}`;
       const message = `Google Geocoding: ${reason}`;
       await reportExternalServiceError({
         source: "Google Geocoding",
@@ -92,19 +99,15 @@ async function geocodePostalCode(
         practiceId,
         context: { cap: postalCode },
       });
-      return { ok: false, error: message };
+      return { status: "unavailable", error: message };
     }
 
     const location = payload.results?.[0]?.geometry?.location;
     if (typeof location?.lat !== "number" || typeof location.lng !== "number") {
-      const message = "Google Geocoding: coordinate assenti nella risposta";
-      await reportExternalServiceError({
-        source: "Google Geocoding",
-        message,
-        practiceId,
-        context: { cap: postalCode },
-      });
-      return { ok: false, error: message };
+      return {
+        status: "not_found",
+        error: "Google Geocoding: coordinate assenti nella risposta",
+      };
     }
 
     const coordinates = { lat: location.lat, lng: location.lng };
@@ -121,9 +124,9 @@ async function geocodePostalCode(
         practiceId,
         context: { cap: postalCode },
       });
-      return { ok: false, error: message };
+      return { status: "unavailable", error: message };
     }
-    return { ok: true, coordinates };
+    return { status: "ok", coordinates };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "errore di rete";
     const message = `Google Geocoding: ${reason}`;
@@ -133,7 +136,7 @@ async function geocodePostalCode(
       practiceId,
       context: { cap: postalCode },
     });
-    return { ok: false, error: message };
+    return { status: "unavailable", error: message };
   }
 }
 
@@ -142,10 +145,17 @@ export async function findNearbyAgencies(
   postalCode: string,
 ): Promise<
   | { ok: true; agencies: NearbyAgency[]; noneWithinRadius: boolean }
-  | { ok: false; error: string }
+  | { ok: false; reason: "not_found" | "unavailable"; error: string }
 > {
   const geocoding = await geocodePostalCode(practiceId, postalCode);
-  if (!geocoding.ok) return geocoding;
+  if (geocoding.status !== "ok") {
+    return {
+      ok: false,
+      reason:
+        geocoding.status === "not_found" ? "not_found" : "unavailable",
+      error: geocoding.error,
+    };
+  }
 
   const supabase = createAdminSupabaseClient();
   const { data, error } = await supabase
@@ -163,7 +173,7 @@ export async function findNearbyAgencies(
       practiceId,
       context: { cap: postalCode },
     });
-    return { ok: false, error: message };
+    return { ok: false, reason: "unavailable", error: message };
   }
 
   const ranked = (data ?? [])
@@ -183,6 +193,7 @@ export async function findNearbyAgencies(
   if (ranked.length === 0) {
     return {
       ok: false,
+      reason: "unavailable",
       error: "Nessuna agenzia attiva con coordinate disponibili",
     };
   }

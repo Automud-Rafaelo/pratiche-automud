@@ -163,6 +163,17 @@ export default async function PracticeDetailPage({
             {highlightedEvents.map((event) => (
               <li key={event.id}>
                 <strong>{highlightedEventLabels[event.tipo]}</strong>{" "}
+                {event.tipo === "targa_contestata"
+                  ? `Targa operatore: ${displayValue(
+                      typeof event.dettaglio.targa_operatore === "string"
+                        ? event.dettaglio.targa_operatore
+                        : undefined,
+                    )} · Targa cliente: ${displayValue(
+                      typeof event.dettaglio.targa_cliente === "string"
+                        ? event.dettaglio.targa_cliente
+                        : undefined,
+                    )}`
+                  : ""}
                 {typeof event.dettaglio.errore === "string"
                   ? `Causa: ${event.dettaglio.errore}`
                   : ""}
@@ -195,6 +206,10 @@ export default async function PracticeDetailPage({
           {formatMoney(practice.prezzo_concordato)}
         </Field>
         <Field label="Stato">{formatStatus(practice.status)}</Field>
+        <Field label="Targa operatore">{practice.targa}</Field>
+        <Field label="Targa cliente">
+          {displayValue(practice.targa_cliente)}
+        </Field>
         <Field label="Creata il">{formatDateTime(practice.created_at)}</Field>
         <Field label="Ultimo aggiornamento">
           {formatDateTime(practice.updated_at)}

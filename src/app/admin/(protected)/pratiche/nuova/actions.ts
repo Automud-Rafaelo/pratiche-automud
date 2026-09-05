@@ -6,6 +6,7 @@ import { requireAdminSession } from "@/lib/admin/auth";
 import { recordAdminEvent } from "@/lib/admin/events";
 import {
   BUSINESS_RULES,
+  normalizeVehicleName,
   normalizeVehiclePlate,
   PRACTICE_TYPES,
 } from "@/lib/config/business-rules";
@@ -53,8 +54,8 @@ export async function createPracticeAction(formData: FormData) {
       tipo_pratica: type,
       prezzo_concordato: price,
       targa: plate,
-      marca: make.trim(),
-      modello: model.trim(),
+      marca: normalizeVehicleName(make),
+      modello: normalizeVehicleName(model),
     })
     .select("id")
     .single();
