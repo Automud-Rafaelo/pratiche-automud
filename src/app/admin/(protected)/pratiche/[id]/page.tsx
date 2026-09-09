@@ -52,7 +52,8 @@ const highlightedEventLabels: Record<string, string> = {
   targa_contestata: "Il cliente ha contestato la targa.",
   nessuna_agenzia_nel_raggio:
     "Non sono state trovate agenzie entro il raggio configurato.",
-  geocoding_fallito: "Non è stato possibile geocodificare il CAP.",
+  ricerca_agenzie_fallita:
+    "Non è stato possibile cercare le agenzie dalla posizione scelta.",
 };
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -233,7 +234,9 @@ export default async function PracticeDetailPage({
       </ReadOnlySection>
 
       <ReadOnlySection title="Step 2 · Agenzia">
-        <Field label="CAP">{displayValue(practice.cap)}</Field>
+        <Field label="Posizione di ricerca">
+          {displayValue(practice.ricerca_indirizzo)}
+        </Field>
         <Field label="Auto cointestata">{formatBoolean(practice.cointestata)}</Field>
         <Field label="Due chiavi">{formatBoolean(practice.due_chiavi)}</Field>
         <Field label="Agenzia scelta">{agency?.nome ?? "—"}</Field>

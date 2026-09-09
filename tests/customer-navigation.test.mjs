@@ -19,6 +19,14 @@ test("uses the fixed order when the customer is the owner", () => {
   assert.equal(getPreviousCustomerScreen("first_name", baseContext), "owner");
   assert.equal(getNextCustomerScreen("agency", baseContext), "appointment");
   assert.equal(getPreviousCustomerScreen("appointment", baseContext), "agency");
+  assert.equal(
+    getNextCustomerScreen("agency_location", baseContext),
+    "coownership",
+  );
+  assert.equal(
+    getPreviousCustomerScreen("coownership", baseContext),
+    "agency_location",
+  );
 });
 
 test("includes the owner notice and availability question for a non-owner", () => {
@@ -57,8 +65,11 @@ test("skips the appointment when a non-owner does not know the availability", ()
 });
 
 test("includes the customer plate only after a dispute", () => {
-  assert.equal(getNextCustomerScreen("plate", baseContext), "postal_code");
+  assert.equal(getNextCustomerScreen("plate", baseContext), "agency_location");
   const disputed = { ...baseContext, hasDisputedPlate: true };
   assert.equal(getNextCustomerScreen("plate", disputed), "customer_plate");
-  assert.equal(getPreviousCustomerScreen("postal_code", disputed), "customer_plate");
+  assert.equal(
+    getPreviousCustomerScreen("agency_location", disputed),
+    "customer_plate",
+  );
 });

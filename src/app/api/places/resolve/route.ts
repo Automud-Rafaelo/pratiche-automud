@@ -2,6 +2,7 @@ import {
   authorizePlacesPractice,
   reservePlacesRequest,
 } from "@/lib/customer/places-proxy";
+import { createPlaceSelectionProof } from "@/lib/customer/place-selection";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
 import {
   createGooglePlacesAutocompleteProvider,
@@ -65,7 +66,13 @@ export async function POST(request: Request) {
       placeId: body.placeId,
       sessionToken: body.sessionToken,
     });
-    return Response.json({ place });
+    return Response.json({
+      place,
+      selectionProof: createPlaceSelectionProof(
+        authorization.practiceId,
+        place,
+      ),
+    });
   } catch (error) {
     const message =
       error instanceof Error

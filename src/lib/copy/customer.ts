@@ -92,13 +92,9 @@ export const customerCopy = {
     warning:
       "Questa targa ha un formato diverso da quello moderno: puoi continuare comunque.",
   },
-  postalCode: {
-    title: "Qual è il tuo CAP?",
+  agencyLocation: {
+    title: "Da quale posizione vuoi che troviamo un’agenzia?",
     description: "Ci serve per trovare l’agenzia più comoda per te.",
-    label: "CAP",
-    placeholder: "00000",
-    error: "Inserisci un CAP di 5 cifre.",
-    notFoundError: "Non troviamo questo CAP, controlla e riprova.",
   },
   coownership: {
     title: "L’auto è intestata a più persone?",
@@ -119,7 +115,7 @@ export const customerCopy = {
   },
   agency: {
     title: "Scegli l’agenzia dove fare il passaggio",
-    description: "Ti mostriamo le opzioni più vicine al CAP che hai indicato.",
+    description: "Ti mostriamo le opzioni più vicine alla posizione che hai indicato.",
     distance: "km",
     noChoice: "Non ti va bene nessuna? Scrivici su WhatsApp",
     outsideRadius:

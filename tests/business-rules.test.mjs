@@ -5,7 +5,6 @@ import {
   calculateHaversineDistanceKm,
   getAppointmentPreferenceOptions,
   isValidIban,
-  isValidItalianPostalCode,
   isValidItalianTaxCode,
   isValidPhone,
   normalizeVehicleName,
@@ -25,9 +24,7 @@ test("validates IBAN length and mod-97 checksum", () => {
   assert.equal(isValidIban("IT60X05428"), false);
 });
 
-test("validates Italian postal codes and phone numbers", () => {
-  assert.equal(isValidItalianPostalCode("00100"), true);
-  assert.equal(isValidItalianPostalCode("0100"), false);
+test("validates phone numbers", () => {
   assert.equal(isValidPhone("+39 333 123 4567"), true);
   assert.equal(isValidPhone("123"), false);
 });

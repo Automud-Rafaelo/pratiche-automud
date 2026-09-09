@@ -37,20 +37,6 @@ export function findEvent(
   );
 }
 
-function hasUnresolvedGeocodingFailure(
-  events: EventRow[],
-  postalCode: string | null,
-) {
-  if (!postalCode) return false;
-  const latestResult = events.find(
-    (event) =>
-      (event.tipo === "geocoding_fallito" ||
-        event.tipo === "geocoding_riuscito") &&
-      event.dettaglio.cap === postalCode,
-  );
-  return latestResult?.tipo === "geocoding_fallito";
-}
-
 export function getCustomerNavigationContext(
   practice: PracticeRow,
   events: EventRow[],
@@ -59,6 +45,15 @@ export function getCustomerNavigationContext(
     (plateDecisionEventTypes as readonly string[]).includes(event.tipo),
   );
 
+  const latestAgencySearch = practice.ricerca_indirizzo
+    ? events.find(
+        (event) =>
+          (event.tipo === "posizione_ricerca_salvata" ||
+            event.tipo === "ricerca_agenzie_fallita") &&
+          event.dettaglio.indirizzo === practice.ricerca_indirizzo,
+      )
+    : undefined;
+
   return {
     isOwner: practice.is_proprietario,
     isCoOwned: practice.cointestata,
@@ -66,7 +61,11 @@ export function getCustomerNavigationContext(
     hasDisputedPlate:
       latestPlateDecision?.tipo === "targa_contestata_richiesta" ||
       latestPlateDecision?.tipo === "targa_contestata",
-    useAgencyFallback: hasUnresolvedGeocodingFailure(events, practice.cap),
+    useAgencyFallback:
+      Boolean(practice.ricerca_indirizzo) &&
+      (practice.ricerca_lat === null ||
+        practice.ricerca_lng === null ||
+        latestAgencySearch?.tipo === "ricerca_agenzie_fallita"),
   };
 }
 
@@ -96,7 +95,7 @@ export function resolveCustomerScreen(
   }
 
   if (practice.status === "step2_agenzia") {
-    if (!practice.cap) return "postal_code";
+    if (!practice.ricerca_indirizzo) return "agency_location";
     if (practice.cointestata === null) return "coownership";
     if (
       practice.cointestata &&

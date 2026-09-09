@@ -26,7 +26,6 @@ export type PracticeRow = {
   ricerca_place_id: string | null;
   ricerca_lat: number | null;
   ricerca_lng: number | null;
-  cap: string | null;
   cointestata: boolean | null;
   due_chiavi: boolean | null;
   agenzia_id: string | null;

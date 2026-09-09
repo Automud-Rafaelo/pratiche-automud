@@ -19,6 +19,7 @@ type PlaceAutocompleteFieldProps = {
   screen: string;
   mode: PlacesAutocompleteMode;
   defaultPlace?: ResolvedPlace | null;
+  defaultSelectionProof?: string | null;
   manualFallback: "always" | "on-error";
 };
 
@@ -29,6 +30,7 @@ type SuggestResponse = {
 
 type ResolveResponse = {
   place?: ResolvedPlace;
+  selectionProof?: string;
 };
 
 export function PlaceAutocompleteField({
@@ -37,6 +39,7 @@ export function PlaceAutocompleteField({
   screen,
   mode,
   defaultPlace = null,
+  defaultSelectionProof = null,
   manualFallback,
 }: PlaceAutocompleteFieldProps) {
   const [query, setQuery] = useState("");
@@ -44,6 +47,9 @@ export function PlaceAutocompleteField({
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<ResolvedPlace | null>(
     defaultPlace,
+  );
+  const [selectionProof, setSelectionProof] = useState<string | null>(
+    defaultSelectionProof,
   );
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
@@ -123,8 +129,11 @@ export function PlaceAutocompleteField({
       });
       if (!response.ok) throw new Error("Place details unavailable");
       const payload = (await response.json()) as ResolveResponse;
-      if (!payload.place) throw new Error("Place details missing");
+      if (!payload.place || !payload.selectionProof) {
+        throw new Error("Place details missing");
+      }
       setSelectedPlace(payload.place);
+      setSelectionProof(payload.selectionProof);
       setSuggestions([]);
     } catch (error) {
       console.error(error);
@@ -139,6 +148,7 @@ export function PlaceAutocompleteField({
     setQuery("");
     setSuggestions([]);
     setSessionToken(null);
+    setSelectionProof(null);
     setUnavailable(false);
     setManual(false);
     setManualAddress("");
@@ -161,25 +171,13 @@ export function PlaceAutocompleteField({
     }
   }
 
-  if (selectedPlace) {
+  if (selectedPlace && selectionProof) {
     return (
       <form action={action}>
         <input name="token" type="hidden" value={token} />
         <input name="screen" type="hidden" value={screen} />
         <input name="selection_mode" type="hidden" value="place" />
-        <input name="place_id" type="hidden" value={selectedPlace.placeId} />
-        <input
-          name="display_name"
-          type="hidden"
-          value={selectedPlace.displayName}
-        />
-        <input
-          name="formatted_address"
-          type="hidden"
-          value={selectedPlace.formattedAddress}
-        />
-        <input name="lat" type="hidden" value={selectedPlace.lat} />
-        <input name="lng" type="hidden" value={selectedPlace.lng} />
+        <input name="place_proof" type="hidden" value={selectionProof} />
         <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-[#E5DED2]">
           <h2 className="text-xl font-bold">
             {mode === "establishment"

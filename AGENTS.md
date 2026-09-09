@@ -102,15 +102,17 @@ La targa viene validata quando l'operatore crea la pratica. Normalizzarla in mai
 
 Chiedere:
 
-1. CAP;
+1. la posizione dalla quale cercare un'agenzia;
 2. se l'auto è cointestata; in caso affermativo avvisare che tutti i cointestatari devono essere presenti in agenzia;
 3. se sono disponibili due chiavi.
 
-Geocodificare il CAP passando prima da `cap_coordinate`. Mostrare fino a quattro agenzie attive entro 25 km, ordinate per distanza e senza preferenze ulteriori. Per ogni agenzia mostrare nome, indirizzo, distanza e telefono. La distanza si calcola localmente con Haversine.
+La domanda sulla posizione usa il titolo “Da quale posizione vuoi che troviamo un'agenzia?” e il sottotitolo “Ci serve per trovare l'agenzia più comoda per te”. Mostrare suggerimenti Places limitati all'Italia dopo almeno tre caratteri e con debounce di 300 ms. Quando il cliente seleziona un suggerimento, mostrare l'indirizzo completo e chiedere conferma con “Sì, è questo” o “Cambia”. Salvare indirizzo formattato, place ID e coordinate nei campi `ricerca_*`.
+
+Dopo la conferma, mostrare fino a quattro agenzie attive entro 25 km dalle coordinate scelte, ordinate per distanza e senza preferenze ulteriori. Per ogni agenzia mostrare nome, indirizzo, distanza e telefono. La distanza si calcola localmente con Haversine.
 
 Se non esistono agenzie entro il raggio configurato, mostrare comunque le quattro agenzie attive più vicine, rendere evidente la distanza, registrare l'evento `nessuna_agenzia_nel_raggio` e mostrare sopra le card: “Non abbiamo agenzie entro 25 km da te. Queste sono le più vicine: se sono troppo lontane, scrivici su WhatsApp e ne cerchiamo una insieme.” Il valore del raggio nel testo proviene da `business-rules.ts`.
 
-Se Google Geocoding restituisce `ZERO_RESULTS` o non fornisce coordinate, restare sulla schermata CAP con l'errore “Non troviamo questo CAP, controlla e riprova” e non registrare `geocoding_fallito`. Soltanto se il servizio non è disponibile per chiave, quota, rete o altro errore operativo mostrare la schermata rassicurante, proseguire senza `agenzia_id` e registrare `geocoding_fallito` con CAP e causa. Il pannello deve rendere evidente questo evento.
+Se Places non è disponibile, mostrare il fallback manuale e creare un avviso operatore con la causa. Una posizione inserita manualmente non possiede coordinate: mostrare la schermata rassicurante, proseguire senza `agenzia_id` e registrare `ricerca_agenzie_fallita` con indirizzo e causa. Il pannello deve rendere evidente questo evento.
 
 ### Step 3 — Preferenza appuntamento
 
@@ -185,7 +187,7 @@ Form con la sola password. Alla riuscita crea il cookie di sessione e reindirizz
 
 ### `/admin`
 
-Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome del cliente se presenti, stato, data di creazione e tre indicatori: verifiche completate, appuntamento confermato ed eventi da attenzionare (`targa_contestata`, `nessuna_agenzia_nel_raggio`, `geocoding_fallito` o errori dei servizi esterni). Gli errori esterni non risolti sono mostrati con la causa in cima alla pagina. Include il filtro “Da verificare”, definito come pratiche `completata` con `verifiche_completate_at` nullo, e il bottone “Nuova pratica”.
+Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome del cliente se presenti, stato, data di creazione e tre indicatori: verifiche completate, appuntamento confermato ed eventi da attenzionare (`targa_contestata`, `nessuna_agenzia_nel_raggio`, `ricerca_agenzie_fallita` o errori dei servizi esterni). Gli errori esterni non risolti sono mostrati con la causa in cima alla pagina. Include il filtro “Da verificare”, definito come pratiche `completata` con `verifiche_completate_at` nullo, e il bottone “Nuova pratica”.
 
 ### `/admin/pratiche/nuova`
 
@@ -227,9 +229,7 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 - Ogni ricerca autocomplete usa un session token UUID generato dal server, riutilizzato durante la digitazione e passato a Place Details (New) alla selezione per chiudere la sessione.
 - Place Details (New) richiede soltanto `id`, `displayName`, `formattedAddress` e `location` tramite field mask.
 - Usare Places API (New), Text Search, soltanto durante l'import delle agenzie.
-- Usare Geocoding API soltanto per ottenere le coordinate del CAP inserito dal cliente.
-- Consultare sempre `cap_coordinate` prima del geocoding. Chiedere un CAP a Google al massimo una volta e poi usare la cache.
-- Calcolare la distanza agenzia–CAP localmente con Haversine.
+- Calcolare la distanza tra le agenzie e le coordinate della posizione confermata localmente con Haversine.
 - Gli orari ottenuti da Places sono salvati in `agenzie.orari`, ma non sono mostrati al cliente nella v1.
 
 ## Modello dati Supabase
@@ -244,7 +244,7 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 - `prezzo_concordato`: numerico, inserito dall'operatore.
 - `targa`, `marca`, `modello`: testo, inserito dall'operatore; il cliente vede i dati e conferma o contesta la targa.
 - `targa_cliente`: testo nullable, compilato soltanto quando il cliente contesta la targa dell'operatore.
-- Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `cap`, `cointestata`, `due_chiavi`, `agenzia_id`, `preferenza_data`, `preferenza_fascia`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `telefono_ritiro`.
+- Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `ricerca_indirizzo`, `ricerca_place_id`, `ricerca_lat`, `ricerca_lng`, `cointestata`, `due_chiavi`, `agenzia_id`, `preferenza_data`, `preferenza_fascia`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `ritiro_nome_attivita`, `ritiro_place_id`, `ritiro_lat`, `ritiro_lng`, `telefono_ritiro`.
 - Verifiche nullable con semantica anomalia/ok/non verificato: `check_intestatario_non_corrisponde`, `check_cdp_cartaceo`, `check_revisione_scaduta`, `check_km_scalati`, `check_fermo_amministrativo`.
 - Campi operatore nullable: `appuntamento_confermato_data`, `appuntamento_confermato_fascia`, `verifiche_completate_at`, `note_operatore`.
 
@@ -262,15 +262,11 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 - `import_status`: `pending`, `ok` oppure `not_found`.
 - `import_error`: ultima causa di errore Places, nullable e cancellata dopo un esito conclusivo.
 
-### `cap_coordinate`
-
-Cache del geocoding: `cap` è la chiave primaria; `lat` e `lng` sono numerici; `created_at` è il timestamp di creazione.
-
 ### `eventi`
 
 Log di debug e amministrazione: `id`, `pratica_id`, `created_at`, `tipo` e `dettaglio` JSONB. Gli eventi vengono eliminati a cascata se viene eliminata la pratica.
 
-Eventi da evidenziare nella lista admin: `targa_contestata`, `nessuna_agenzia_nel_raggio`, `geocoding_fallito` ed errori dei servizi esterni.
+Eventi da evidenziare nella lista admin: `targa_contestata`, `nessuna_agenzia_nel_raggio`, `ricerca_agenzie_fallita` ed errori dei servizi esterni.
 
 ### `operator_alerts`
 
@@ -293,7 +289,7 @@ Prenotazioni del rate limit del proxy Places: `id`, `pratica_id` con cancellazio
 - durata e rate limit della sessione admin;
 - autocomplete Places: minimo tre caratteri, debounce 300 ms, massimo 30 richieste al minuto e massimo cinque suggerimenti;
 - normalizzazione della chiave di deduplicazione delle agenzie.
-- validazione completa di codice fiscale, IBAN, CAP e telefono, batch Places e formula di Haversine.
+- validazione completa di codice fiscale, IBAN e telefono, batch Places e formula di Haversine.
 
 ## Test manuale del flusso cliente
 
@@ -305,8 +301,8 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 4. chiudere il browser a metà percorso e riaprire lo stesso link, verificando la ripresa dal primo dato mancante;
 5. riaprire il link dopo il completamento e verificare che compaia sempre la schermata finale;
 6. completare il ramo proprietario “No” con orari del proprietario sconosciuti;
-7. inserire un CAP inesistente e verificare che si resti sulla domanda del CAP senza evento `geocoding_fallito`;
-8. usare un CAP senza agenzie nel raggio e verificare avviso, quattro opzioni più vicine ed evento `nessuna_agenzia_nel_raggio`;
+7. cercare una posizione, selezionare un suggerimento, confermare l'indirizzo e verificare che le agenzie siano ordinate per distanza;
+8. usare una posizione senza agenzie nel raggio e verificare avviso, quattro opzioni più vicine ed evento `nessuna_agenzia_nel_raggio`;
 9. contestare la targa, inserire quella del libretto e verificare normalizzazione, avviso non bloccante ed evento con entrambe le targhe;
 10. controllare nel pannello admin che tutti i dati e gli eventi siano corretti e che le targhe operatore/cliente siano evidenti.
 
@@ -341,11 +337,11 @@ Completato:
 - accesso admin a Supabase esclusivamente server-side tramite service role;
 - flusso cliente completo `/p/[token]`, mobile-first, con una domanda per schermata, ripresa automatica e testi centralizzati;
 - navigazione cliente basata su un ordine fisso, con precedente/successiva applicabile e ripresa separata dal primo dato mancante;
-- validazione server e browser di codice fiscale, incluso il carattere di controllo, IBAN, CAP e telefono;
-- gestione distinta di CAP inesistente e indisponibilità del servizio Geocoding;
+- validazione server e browser di codice fiscale, incluso il carattere di controllo, IBAN e telefono;
+- ricerca posizione cliente tramite Places Autocomplete e conferma dell'indirizzo;
 - acquisizione della targa indicata dal cliente e visualizzazione delle due targhe nel pannello;
 - normalizzazione di marca e modello alla creazione della pratica;
-- geocoding CAP con cache, calcolo Haversine, fallback senza agenzia ed eventi di attenzione;
+- calcolo Haversine dalle coordinate scelte, fallback senza agenzia ed eventi di attenzione;
 - calendario server-side basato esclusivamente su `getAppointmentPreferenceOptions`;
 - pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;

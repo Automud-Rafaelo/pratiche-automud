@@ -23,7 +23,7 @@ export const VERIFICATION_FIELDS = [
 export const ATTENTION_EVENT_TYPES = [
   "targa_contestata",
   "nessuna_agenzia_nel_raggio",
-  "geocoding_fallito",
+  "ricerca_agenzie_fallita",
   "external_service_error",
 ] as const;
 
@@ -63,11 +63,11 @@ export const BUSINESS_RULES = {
     maximumRequestsPerMinute: 30,
     rateLimitWindowMs: 60_000,
     maximumSuggestions: 5,
+    selectionProofMaxAgeMs: 30 * 60_000,
     includedRegionCodes: ["it"],
     addressPrimaryTypes: ["street_address", "premise", "subpremise"],
   },
   validation: {
-    italianPostalCodePattern: /^\d{5}$/,
     phonePattern: /^\+?[\d\s().-]{7,20}$/,
     italianTaxCodePattern:
       /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/i,
@@ -157,10 +157,6 @@ export function isValidItalianTaxCode(value: string) {
   }
 
   return String.fromCharCode(65 + (checksum % 26)) === normalized[15];
-}
-
-export function isValidItalianPostalCode(value: string) {
-  return BUSINESS_RULES.validation.italianPostalCodePattern.test(value.trim());
 }
 
 export function isValidPhone(value: string) {

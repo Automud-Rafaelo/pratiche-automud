@@ -8,16 +8,12 @@ import {
   PICKUP_LOCATIONS,
   getAppointmentPreferenceOptions,
   isValidIban,
-  isValidItalianPostalCode,
   isValidItalianTaxCode,
   isValidPhone,
   normalizeUppercaseValue,
   normalizeVehiclePlate,
 } from "@/lib/config/business-rules";
-import {
-  findNearbyAgencies,
-  geocodePostalCode,
-} from "@/lib/customer/agencies";
+import { findNearbyAgencies } from "@/lib/customer/agencies";
 import {
   loadCustomerPractice,
   recordCustomerEvent,
@@ -33,6 +29,7 @@ import {
   type CustomerNavigationContext,
   type CustomerScreenId,
 } from "@/lib/customer/navigation";
+import { verifyPlaceSelectionProof } from "@/lib/customer/place-selection";
 
 async function getActionContext(formData: FormData, expected: CustomerScreenId) {
   const token = formData.get("token");
@@ -240,40 +237,61 @@ export async function saveCustomerPlateAction(formData: FormData) {
   });
 }
 
-export async function savePostalCodeAction(formData: FormData) {
+export async function saveAgencyLocationAction(formData: FormData) {
   const { token, practice, navigation } = await getActionContext(
     formData,
-    "postal_code",
+    "agency_location",
   );
-  const rawValue = formData.get("cap");
-  const postalCode = typeof rawValue === "string" ? rawValue.trim() : "";
-  if (!isValidItalianPostalCode(postalCode)) {
-    invalidAction(token, "postal_code");
-  }
+  const selectionMode = formData.get("selection_mode");
+  let values: {
+    ricerca_indirizzo: string;
+    ricerca_place_id: string | null;
+    ricerca_lat: number | null;
+    ricerca_lng: number | null;
+  };
 
-  const geocoding = await geocodePostalCode(practice.id, postalCode);
-  if (geocoding.status === "not_found") {
-    invalidAction(token, "postal_code", "postal_not_found");
-  }
-
-  const useAgencyFallback = geocoding.status === "unavailable";
-  await updateCustomerPractice(practice.id, { cap: postalCode });
-  await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
-    campo: "cap",
-  });
-  if (geocoding.status === "unavailable") {
-    await recordCustomerEvent(practice.id, "geocoding_fallito", {
-      cap: postalCode,
-      errore: geocoding.error,
-    });
+  if (selectionMode === "place") {
+    const proof = formData.get("place_proof");
+    const place =
+      typeof proof === "string"
+        ? verifyPlaceSelectionProof(proof, practice.id)
+        : null;
+    if (!place) invalidAction(token, "agency_location");
+    values = {
+      ricerca_indirizzo: place.formattedAddress,
+      ricerca_place_id: place.placeId,
+      ricerca_lat: place.lat,
+      ricerca_lng: place.lng,
+    };
+  } else if (selectionMode === "manual") {
+    const manualAddress = formData.get("manual_address");
+    if (typeof manualAddress !== "string" || !manualAddress.trim()) {
+      invalidAction(token, "agency_location");
+    }
+    values = {
+      ricerca_indirizzo: manualAddress.trim(),
+      ricerca_place_id: null,
+      ricerca_lat: null,
+      ricerca_lng: null,
+    };
   } else {
-    await recordCustomerEvent(practice.id, "geocoding_riuscito", {
-      cap: postalCode,
-    });
+    invalidAction(token, "agency_location");
   }
-  finishAction(token, "postal_code", {
+
+  await updateCustomerPractice(practice.id, {
+    ...values,
+    agenzia_id: null,
+  });
+  await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
+    campo: "ricerca_indirizzo",
+  });
+  await recordCustomerEvent(practice.id, "posizione_ricerca_salvata", {
+    indirizzo: values.ricerca_indirizzo,
+    origine: selectionMode,
+  });
+  finishAction(token, "agency_location", {
     ...navigation,
-    useAgencyFallback,
+    useAgencyFallback: values.ricerca_lat === null,
   });
 }
 
@@ -325,17 +343,21 @@ export async function saveAgencyAction(formData: FormData) {
     "agency",
   );
   const agencyId = formData.get("agency_id");
-  if (typeof agencyId !== "string" || !practice.cap) {
+  if (
+    typeof agencyId !== "string" ||
+    practice.ricerca_lat === null ||
+    practice.ricerca_lng === null
+  ) {
     invalidAction(token, "agency");
   }
 
-  const result = await findNearbyAgencies(practice.id, practice.cap);
+  const result = await findNearbyAgencies(practice.id, {
+    lat: practice.ricerca_lat,
+    lng: practice.ricerca_lng,
+  });
   if (!result.ok) {
-    if (result.reason === "not_found") {
-      invalidAction(token, "postal_code", "postal_not_found");
-    }
-    await recordCustomerEvent(practice.id, "geocoding_fallito", {
-      cap: practice.cap,
+    await recordCustomerEvent(practice.id, "ricerca_agenzie_fallita", {
+      indirizzo: practice.ricerca_indirizzo,
       errore: result.error,
     });
     revalidatePath(`/p/${token}`);

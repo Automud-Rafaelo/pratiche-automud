@@ -18,7 +18,7 @@ type AdminPageProps = {
 const attentionLabels: Record<string, string> = {
   targa_contestata: "Targa contestata",
   nessuna_agenzia_nel_raggio: `Agenzia oltre ${BUSINESS_RULES.nearbyAgencies.radiusKm} km`,
-  geocoding_fallito: "Geocoding fallito",
+  ricerca_agenzie_fallita: "Ricerca agenzie non disponibile",
   external_service_error: "Servizio esterno non disponibile",
 };
 
