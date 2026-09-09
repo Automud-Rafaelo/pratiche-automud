@@ -208,6 +208,7 @@ Mostra:
 - note operatore modificabili;
 - log eventi in ordine cronologico inverso.
 - tabella “Tempo per schermata” con ogni completamento, incluse le ripetizioni dovute alla navigazione indietro, durata in secondi e totale.
+- eliminazione definitiva della pratica dopo conferma tramite digitazione della targa; tutte le righe collegate vengono cancellate a cascata e il token cliente non è più valido.
 
 Ogni salvataggio dell'operatore genera un evento.
 

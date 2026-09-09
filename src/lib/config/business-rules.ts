@@ -80,6 +80,15 @@ export function normalizeVehiclePlate(value: string) {
   return value.toUpperCase().replace(/[\s-]+/g, "");
 }
 
+export function matchesVehiclePlateConfirmation(
+  confirmation: string,
+  expectedPlate: string,
+) {
+  return (
+    normalizeVehiclePlate(confirmation) === normalizeVehiclePlate(expectedPlate)
+  );
+}
+
 export function normalizeVehicleName(value: string) {
   return value
     .trim()

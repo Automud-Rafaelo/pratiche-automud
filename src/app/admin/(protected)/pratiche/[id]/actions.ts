@@ -8,6 +8,7 @@ import { recordAdminEvent } from "@/lib/admin/events";
 import {
   APPOINTMENT_SLOTS,
   VERIFICATION_FIELDS,
+  matchesVehiclePlateConfirmation,
   parseMoneyAmount,
   type VerificationField,
 } from "@/lib/config/business-rules";
@@ -225,4 +226,48 @@ export async function savePriceAction(formData: FormData) {
   }
 
   redirectWithMessage(practiceId, "price_saved");
+}
+
+export async function deletePracticeAction(formData: FormData) {
+  await requireAdminSession();
+  const practiceId = getPracticeId(formData);
+  const plateConfirmation = formData.get("plate_confirmation");
+  const supabase = createAdminSupabaseClient();
+  const { data, error: loadError } = await supabase
+    .from("pratiche")
+    .select("targa")
+    .eq("id", practiceId)
+    .maybeSingle();
+  if (loadError) {
+    await handleSupabaseError(
+      practiceId,
+      `Lettura pratica da eliminare fallita: ${loadError.message}`,
+    );
+  }
+  if (!data) redirect("/admin");
+  if (
+    typeof plateConfirmation !== "string" ||
+    !matchesVehiclePlateConfirmation(plateConfirmation, data.targa)
+  ) {
+    redirectWithMessage(practiceId, "delete_plate_mismatch");
+  }
+
+  const { data: deleted, error } = await supabase
+    .from("pratiche")
+    .delete()
+    .eq("id", practiceId)
+    .select("id")
+    .maybeSingle();
+  if (error) {
+    await handleSupabaseError(
+      practiceId,
+      `Eliminazione pratica fallita: ${error.message}`,
+    );
+  }
+  if (!deleted) {
+    redirectWithMessage(practiceId, "service_error", "Pratica non eliminata");
+  }
+
+  revalidatePath("/admin");
+  redirect("/admin?notice=practice_deleted");
 }

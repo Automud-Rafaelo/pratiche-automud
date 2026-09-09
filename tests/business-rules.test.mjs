@@ -7,6 +7,7 @@ import {
   isValidIban,
   isValidItalianTaxCode,
   isValidPhone,
+  matchesVehiclePlateConfirmation,
   normalizeVehicleName,
   parseMoneyAmount,
 } from "../src/lib/config/business-rules.ts";
@@ -32,6 +33,11 @@ test("validates phone numbers", () => {
 
 test("capitalizes every word in vehicle make and model", () => {
   assert.equal(normalizeVehicleName("  audi   a3 "), "Audi A3");
+});
+
+test("matches the typed plate after the standard normalization", () => {
+  assert.equal(matchesVehiclePlateConfirmation("ab 123-cd", "AB123CD"), true);
+  assert.equal(matchesVehiclePlateConfirmation("AB123CE", "AB123CD"), false);
 });
 
 test("parses non-negative money amounts with comma or dot", () => {

@@ -20,6 +20,7 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 import {
   completeVerificationsAction,
+  deletePracticeAction,
   saveAppointmentAction,
   saveNotesAction,
   savePriceAction,
@@ -41,6 +42,7 @@ const noticeMessages: Record<string, string> = {
   notes_saved: "Note salvate.",
   price_saved: "Prezzo concordato salvato.",
   price_invalid: "Inserisci un prezzo valido.",
+  delete_plate_mismatch: "La targa inserita non corrisponde.",
   service_error: "Operazione non riuscita.",
 };
 
@@ -496,6 +498,41 @@ export default async function PracticeDetailPage({
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-red-300 bg-red-50 p-5">
+        <h2 className="text-lg font-semibold text-red-950">Elimina pratica</h2>
+        <p className="mt-2 text-sm text-red-900">
+          L’eliminazione è definitiva e cancella anche eventi e avvisi collegati.
+        </p>
+        <details className="mt-4">
+          <summary className="inline-block cursor-pointer rounded-md bg-red-700 px-4 py-2 font-medium text-white">
+            Elimina pratica
+          </summary>
+          <form action={deletePracticeAction} className="mt-4 max-w-md">
+            <input name="practice_id" type="hidden" value={practice.id} />
+            <label
+              className="block text-sm font-medium"
+              htmlFor="plate_confirmation"
+            >
+              Digita {practice.targa} per confermare
+            </label>
+            <input
+              autoCapitalize="characters"
+              autoComplete="off"
+              className="mt-1 block w-full rounded-md border border-red-300 px-3 py-2"
+              id="plate_confirmation"
+              name="plate_confirmation"
+              required
+            />
+            <button
+              className="mt-3 rounded-md bg-red-700 px-4 py-2 font-medium text-white"
+              type="submit"
+            >
+              Elimina definitivamente
+            </button>
+          </form>
+        </details>
       </section>
     </div>
   );
