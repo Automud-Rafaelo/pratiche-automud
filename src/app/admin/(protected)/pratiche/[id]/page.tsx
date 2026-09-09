@@ -15,6 +15,7 @@ import {
 } from "@/lib/admin/format";
 import type { AgencyRow, EventRow, PracticeRow } from "@/lib/admin/types";
 import { VERIFICATION_FIELDS } from "@/lib/config/business-rules";
+import { listScreenTimings } from "@/lib/customer/screen-timing";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 import {
@@ -144,6 +145,11 @@ export default async function PracticeDetailPage({
       : null;
   const highlightedEvents = events.filter(
     (event) => highlightedEventLabels[event.tipo],
+  );
+  const screenTimings = listScreenTimings(events);
+  const totalScreenTimeMs = screenTimings.reduce(
+    (total, timing) => total + timing.durationMs,
+    0,
   );
 
   return (
@@ -390,6 +396,45 @@ export default async function PracticeDetailPage({
             Salva note
           </button>
         </form>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <h2 className="text-lg font-semibold">Tempo per schermata</h2>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="text-left">
+              <tr>
+                <th className="py-2 pr-4">Schermata</th>
+                <th className="py-2 text-right">Durata</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {screenTimings.map((timing) => (
+                <tr key={timing.eventId}>
+                  <td className="py-2 pr-4">{timing.screen}</td>
+                  <td className="py-2 text-right">
+                    {(timing.durationMs / 1000).toFixed(1)} s
+                  </td>
+                </tr>
+              ))}
+              {screenTimings.length === 0 ? (
+                <tr>
+                  <td className="py-5 text-slate-500" colSpan={2}>
+                    Nessun tempo registrato.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+            <tfoot className="border-t border-slate-300 font-semibold">
+              <tr>
+                <td className="py-2 pr-4">Totale</td>
+                <td className="py-2 text-right">
+                  {(totalScreenTimeMs / 1000).toFixed(1)} s
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">

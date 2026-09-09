@@ -30,6 +30,7 @@ import {
   type CustomerScreenId,
 } from "@/lib/customer/navigation";
 import { verifyPlaceSelectionProof } from "@/lib/customer/place-selection";
+import { calculateScreenDurationMs } from "@/lib/customer/screen-timing";
 
 async function getActionContext(formData: FormData, expected: CustomerScreenId) {
   const token = formData.get("token");
@@ -56,11 +57,18 @@ async function getActionContext(formData: FormData, expected: CustomerScreenId) 
   };
 }
 
-function finishAction(
+async function finishAction(
   token: string,
   screen: CustomerScreenId,
   navigation: CustomerNavigationContext,
-): never {
+): Promise<never> {
+  const context = await loadCustomerPractice(token);
+  if (context) {
+    await recordCustomerEvent(context.practice.id, "schermata_completata", {
+      schermata: screen,
+      durata_ms: calculateScreenDurationMs(context.events, screen),
+    });
+  }
   revalidatePath(`/p/${token}`);
   const nextScreen = getNextCustomerScreen(screen, navigation);
   redirect(nextScreen ? `/p/${token}?view=${nextScreen}#top` : `/p/${token}`);
@@ -83,7 +91,7 @@ export async function startCustomerFlowAction(formData: FormData) {
     await updateCustomerPractice(practice.id, { status: "step1_dati" });
     await recordCustomerEventOnce(practice.id, "link_aperto");
   }
-  finishAction(token, "welcome", navigation);
+  return finishAction(token, "welcome", navigation);
 }
 
 export async function saveOwnerAction(formData: FormData) {
@@ -99,7 +107,7 @@ export async function saveOwnerAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "is_proprietario",
   });
-  finishAction(token, "owner", {
+  return finishAction(token, "owner", {
     ...navigation,
     isOwner: value === "yes",
   });
@@ -114,7 +122,7 @@ export async function acknowledgeOwnerNoticeAction(formData: FormData) {
     practice.id,
     "proprietario_assente_avviso_visto",
   );
-  finishAction(token, "owner_notice", navigation);
+  return finishAction(token, "owner_notice", navigation);
 }
 
 async function saveTextField(
@@ -135,7 +143,7 @@ async function saveTextField(
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: field,
   });
-  finishAction(token, screen, navigation);
+  return finishAction(token, screen, navigation);
 }
 
 export async function saveFirstNameAction(formData: FormData) {
@@ -182,7 +190,7 @@ export async function savePlateConfirmationAction(formData: FormData) {
       "targa_contestata_richiesta",
       { targa_operatore: practice.targa },
     );
-    finishAction(token, "plate", {
+    return finishAction(token, "plate", {
       ...navigation,
       hasDisputedPlate: true,
     });
@@ -199,7 +207,7 @@ export async function savePlateConfirmationAction(formData: FormData) {
         stato: "step2_agenzia",
       });
     }
-    finishAction(token, "plate", {
+    return finishAction(token, "plate", {
       ...navigation,
       hasDisputedPlate: false,
     });
@@ -231,7 +239,7 @@ export async function saveCustomerPlateAction(formData: FormData) {
       stato: "step2_agenzia",
     });
   }
-  finishAction(token, "customer_plate", {
+  return finishAction(token, "customer_plate", {
     ...navigation,
     hasDisputedPlate: true,
   });
@@ -289,7 +297,7 @@ export async function saveAgencyLocationAction(formData: FormData) {
     indirizzo: values.ricerca_indirizzo,
     origine: selectionMode,
   });
-  finishAction(token, "agency_location", {
+  return finishAction(token, "agency_location", {
     ...navigation,
     useAgencyFallback: values.ricerca_lat === null,
   });
@@ -308,7 +316,7 @@ export async function saveCoownershipAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "cointestata",
   });
-  finishAction(token, "coownership", {
+  return finishAction(token, "coownership", {
     ...navigation,
     isCoOwned: value === "yes",
   });
@@ -320,7 +328,7 @@ export async function acknowledgeCoownershipNoticeAction(formData: FormData) {
     "coownership_notice",
   );
   await recordCustomerEventOnce(practice.id, "cointestatari_avviso_visto");
-  finishAction(token, "coownership_notice", navigation);
+  return finishAction(token, "coownership_notice", navigation);
 }
 
 export async function saveKeysAction(formData: FormData) {
@@ -334,7 +342,7 @@ export async function saveKeysAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "due_chiavi",
   });
-  finishAction(token, "keys", navigation);
+  return finishAction(token, "keys", navigation);
 }
 
 export async function saveAgencyAction(formData: FormData) {
@@ -375,7 +383,7 @@ export async function saveAgencyAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step3_appuntamento",
   });
-  finishAction(token, "agency", navigation);
+  return finishAction(token, "agency", navigation);
 }
 
 export async function continueWithoutAgencyAction(formData: FormData) {
@@ -390,7 +398,7 @@ export async function continueWithoutAgencyAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step3_appuntamento",
   });
-  finishAction(token, "agency_fallback", navigation);
+  return finishAction(token, "agency_fallback", navigation);
 }
 
 export async function saveOwnerAvailabilityAction(formData: FormData) {
@@ -410,7 +418,7 @@ export async function saveOwnerAvailabilityAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "conosce_orari_proprietario",
   });
-  finishAction(token, "owner_availability", {
+  return finishAction(token, "owner_availability", {
     ...navigation,
     knowsOwnerAvailability: value === "yes",
   });
@@ -425,7 +433,7 @@ export async function acknowledgeAvailabilityNoticeAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step4_ritiro",
   });
-  finishAction(token, "availability_notice", navigation);
+  return finishAction(token, "availability_notice", navigation);
 }
 
 export async function saveAppointmentPreferenceAction(formData: FormData) {
@@ -455,7 +463,7 @@ export async function saveAppointmentPreferenceAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step4_ritiro",
   });
-  finishAction(token, "appointment", navigation);
+  return finishAction(token, "appointment", navigation);
 }
 
 export async function savePickupLocationAction(formData: FormData) {
@@ -486,7 +494,7 @@ export async function savePickupLocationAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "ubicazione_auto",
   });
-  finishAction(token, "pickup_location", navigation);
+  return finishAction(token, "pickup_location", navigation);
 }
 
 export async function savePickupAddressAction(formData: FormData) {
@@ -541,7 +549,7 @@ export async function savePickupAddressAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "indirizzo_ritiro",
   });
-  finishAction(token, "pickup_address", navigation);
+  return finishAction(token, "pickup_address", navigation);
 }
 
 export async function savePickupPhoneAction(formData: FormData) {
@@ -564,5 +572,5 @@ export async function savePickupPhoneAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "completata",
   });
-  finishAction(token, "pickup_phone", navigation);
+  return finishAction(token, "pickup_phone", navigation);
 }

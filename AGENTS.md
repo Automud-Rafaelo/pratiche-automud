@@ -206,6 +206,7 @@ Mostra:
 - preferenza del cliente, agenzia scelta con telefono ed email, data e fascia dell'appuntamento confermato modificabili;
 - note operatore modificabili;
 - log eventi in ordine cronologico inverso.
+- tabella “Tempo per schermata” con ogni completamento, incluse le ripetizioni dovute alla navigazione indietro, durata in secondi e totale.
 
 Ogni salvataggio dell'operatore genera un evento.
 
@@ -268,6 +269,8 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 ### `eventi`
 
 Log di debug e amministrazione: `id`, `pratica_id`, `created_at`, `tipo` e `dettaglio` JSONB. Gli eventi vengono eliminati a cascata se viene eliminata la pratica.
+
+Quando il server serve una schermata cliente registra `schermata_visualizzata`. Dopo ogni salvataggio registra `schermata_completata` con `{ schermata, durata_ms }`, calcolando la durata dall'ultima visualizzazione della stessa schermata. Le schermate ripetute producono righe distinte. Il log admin mostra data e ora fino ai secondi e una tabella riepiloga le singole durate e il totale.
 
 Eventi da evidenziare nella lista admin: `targa_contestata`, `nessuna_agenzia_nel_raggio`, `ricerca_agenzie_fallita` ed errori dei servizi esterni.
 

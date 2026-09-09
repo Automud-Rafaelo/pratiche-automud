@@ -280,6 +280,11 @@ export default async function CustomerPage({
     await recordCustomerEventOnce(practice.id, "link_aperto");
   }
   const screen = getVisibleCustomerScreen(practice, events, query.view);
+  if (screen !== "complete") {
+    await recordCustomerEvent(practice.id, "schermata_visualizzata", {
+      schermata: screen,
+    });
+  }
   const navigation = getCustomerNavigationContext(practice, events);
   const progress = getCustomerProgress(screen, navigation);
   const frameProps = {
