@@ -57,6 +57,15 @@ export const BUSINESS_RULES = {
     activeRequiresPhone: true,
     placesBatchSize: 10,
   },
+  placesAutocomplete: {
+    minimumInputLength: 3,
+    debounceMs: 300,
+    maximumRequestsPerMinute: 30,
+    rateLimitWindowMs: 60_000,
+    maximumSuggestions: 5,
+    includedRegionCodes: ["it"],
+    addressPrimaryTypes: ["street_address", "premise", "subpremise"],
+  },
   validation: {
     italianPostalCodePattern: /^\d{5}$/,
     phonePattern: /^\+?[\d\s().-]{7,20}$/,

@@ -223,6 +223,9 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 ## Google Maps Platform
 
 - Usare `GOOGLE_MAPS_API_KEY` solo in route handler o server action.
+- L'autocomplete cliente passa esclusivamente dai proxy server `POST /api/places/suggest` e `POST /api/places/resolve`, accessibili soltanto con un token pratica valido e limitati complessivamente a 30 richieste al minuto per pratica.
+- Ogni ricerca autocomplete usa un session token UUID generato dal server, riutilizzato durante la digitazione e passato a Place Details (New) alla selezione per chiudere la sessione.
+- Place Details (New) richiede soltanto `id`, `displayName`, `formattedAddress` e `location` tramite field mask.
 - Usare Places API (New), Text Search, soltanto durante l'import delle agenzie.
 - Usare Geocoding API soltanto per ottenere le coordinate del CAP inserito dal cliente.
 - Consultare sempre `cap_coordinate` prima del geocoding. Chiedere un CAP a Google al massimo una volta e poi usare la cache.
@@ -271,7 +274,11 @@ Eventi da evidenziare nella lista admin: `targa_contestata`, `nessuna_agenzia_ne
 
 ### `operator_alerts`
 
-Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_at`, `source`, `message`, `context` e `resolved_at`. Sono visibili in `/admin` e possono essere contrassegnati come risolti.
+Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_at`, `pratica_id` nullable con cancellazione a cascata, `source`, `message`, `context` e `resolved_at`. Sono visibili in `/admin` e possono essere contrassegnati come risolti.
+
+### `place_autocomplete_requests`
+
+Prenotazioni del rate limit del proxy Places: `id`, `pratica_id` con cancellazione a cascata e `requested_at`. Non sono accessibili pubblicamente.
 
 ## Regole di business centralizzate
 
@@ -284,6 +291,7 @@ Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_a
 - raggio di 25 km, massimo quattro agenzie e fallback alle quattro più vicine;
 - calendario a tre giorni, esclusione domenica, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
 - durata e rate limit della sessione admin;
+- autocomplete Places: minimo tre caratteri, debounce 300 ms, massimo 30 richieste al minuto e massimo cinque suggerimenti;
 - normalizzazione della chiave di deduplicazione delle agenzie.
 - validazione completa di codice fiscale, IBAN, CAP e telefono, batch Places e formula di Haversine.
 

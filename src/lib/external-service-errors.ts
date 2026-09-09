@@ -20,6 +20,7 @@ export async function reportExternalServiceError({
   try {
     const supabase = createAdminSupabaseClient();
     const { error: alertError } = await supabase.from("operator_alerts").insert({
+      pratica_id: practiceId ?? null,
       source,
       message,
       context: practiceId ? { ...context, practice_id: practiceId } : context,

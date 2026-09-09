@@ -15,6 +15,23 @@ export const customerCopy = {
     title: "Qualcosa non ha funzionato.",
     description: "Riprova tra poco oppure scrivici su WhatsApp.",
   },
+  placesAutocomplete: {
+    addressLabel: "Indirizzo",
+    addressPlaceholder: "Inizia a scrivere l’indirizzo",
+    establishmentLabel: "Nome o indirizzo",
+    establishmentPlaceholder: "Inizia a scrivere il nome o la via",
+    loading: "Cerchiamo…",
+    noResults: "Nessun risultato, prova a scrivere in modo diverso.",
+    unavailable:
+      "Non riusciamo a cercare in questo momento, scrivi l’indirizzo a mano.",
+    manualLink: "Non la trovo, scrivo l’indirizzo a mano",
+    manualLabel: "Indirizzo completo",
+    manualPlaceholder: "Via, numero civico, città",
+    confirmAddress: "Confermi questo indirizzo?",
+    confirmEstablishment: "Confermi questo posto?",
+    confirm: "Sì, è questo",
+    change: "Cambia",
+  },
   welcome: {
     title: "Ciao! Organizziamo insieme il passaggio della tua auto",
     description:
