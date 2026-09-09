@@ -2,6 +2,8 @@
 
 ## Scopo
 
+Questo sistema è un prototipo di test. L'obiettivo è che il flusso e la logica vengano integrati nel gestionale interno di Automud (Express + React + PostgreSQL). Di conseguenza: la logica di dominio (validazioni, regole, parser, calcoli) va mantenuta in moduli puri senza dipendenze dal framework, con test; le API esterne vanno isolate dietro interfacce sostituibili.
+
 Automud S.r.l. acquista auto incidentate da privati. Dopo che un commerciale ha concordato il prezzo, il cliente riceve via WhatsApp un link a una web app. Con il minimo intervento umano, il cliente completa i dati per il pagamento, sceglie l'agenzia per il passaggio di proprietà, indica una preferenza per l'appuntamento e fornisce i dati necessari al ritiro con carro attrezzi.
 
 Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
