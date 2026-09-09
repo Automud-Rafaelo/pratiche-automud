@@ -1,6 +1,6 @@
 "use client";
 
-import type { KeyboardEvent } from "react";
+import type { FocusEvent, KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { BUSINESS_RULES } from "@/lib/config/business-rules";
@@ -20,6 +20,7 @@ type PlaceAutocompleteFieldProps = {
   mode: PlacesAutocompleteMode;
   defaultPlace?: ResolvedPlace | null;
   defaultSelectionProof?: string | null;
+  defaultManualAddress?: string;
   manualFallback: "always" | "on-error";
 };
 
@@ -40,6 +41,7 @@ export function PlaceAutocompleteField({
   mode,
   defaultPlace = null,
   defaultSelectionProof = null,
+  defaultManualAddress = "",
   manualFallback,
 }: PlaceAutocompleteFieldProps) {
   const [query, setQuery] = useState("");
@@ -53,8 +55,10 @@ export function PlaceAutocompleteField({
   );
   const [loading, setLoading] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
-  const [manual, setManual] = useState(false);
-  const [manualAddress, setManualAddress] = useState("");
+  const [manual, setManual] = useState(
+    !defaultPlace && Boolean(defaultManualAddress),
+  );
+  const [manualAddress, setManualAddress] = useState(defaultManualAddress);
   const [activeIndex, setActiveIndex] = useState(-1);
   const requestSequence = useRef(0);
   const copy = customerCopy.placesAutocomplete;
@@ -171,6 +175,13 @@ export function PlaceAutocompleteField({
     }
   }
 
+  function handleFocus(event: FocusEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    window.requestAnimationFrame(() => {
+      input.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
   if (selectedPlace && selectionProof) {
     return (
       <form action={action}>
@@ -223,6 +234,7 @@ export function PlaceAutocompleteField({
           id={`${screen}-manual-address`}
           name="manual_address"
           onChange={(event) => setManualAddress(event.target.value)}
+          onFocus={handleFocus}
           placeholder={copy.manualPlaceholder}
           required
           value={manualAddress}
@@ -270,6 +282,7 @@ export function PlaceAutocompleteField({
         className={inputClass}
         id={`${screen}-place-query`}
         onChange={(event) => setQuery(event.target.value)}
+        onFocus={handleFocus}
         onKeyDown={handleKeyDown}
         placeholder={
           mode === "establishment"

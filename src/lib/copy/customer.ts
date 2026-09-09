@@ -151,13 +151,18 @@ export const customerCopy = {
     bodyShop: "In una carrozzeria",
   },
   pickupAddress: {
-    title: "Qual è l’indirizzo esatto?",
-    descriptions: {
-      home: "Scrivi la via e il numero civico.",
-      business: "Scrivi il nome della struttura e l’indirizzo.",
+    home: {
+      title: "Qual è l’indirizzo esatto?",
+      description: "Scrivi la via e il numero civico.",
     },
-    label: "Indirizzo di ritiro",
-    placeholder: "Via e numero civico",
+    storage: {
+      title: "Come si chiama il deposito?",
+      description: "Scrivi il nome o la via, poi scegli dalla lista.",
+    },
+    bodyShop: {
+      title: "Come si chiama la carrozzeria?",
+      description: "Scrivi il nome o la via, poi scegli dalla lista.",
+    },
   },
   pickupPhone: {
     title: "A quale numero può chiamarti il carro attrezzi?",

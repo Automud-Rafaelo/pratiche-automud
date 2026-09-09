@@ -136,6 +136,12 @@ export default async function PracticeDetailPage({
   }
 
   const customerLink = buildCustomerLink(practice.token);
+  const pickupMapsUrl =
+    practice.ritiro_lat !== null && practice.ritiro_lng !== null
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          `${practice.ritiro_lat},${practice.ritiro_lng}`,
+        )}`
+      : null;
   const highlightedEvents = events.filter(
     (event) => highlightedEventLabels[event.tipo],
   );
@@ -257,8 +263,25 @@ export default async function PracticeDetailPage({
 
       <ReadOnlySection title="Step 4 · Ritiro">
         <Field label="Ubicazione auto">{practice.ubicazione_auto ?? "—"}</Field>
+        <Field label="Nome attività">
+          {displayValue(practice.ritiro_nome_attivita)}
+        </Field>
         <Field label="Indirizzo ritiro">
           {displayValue(practice.indirizzo_ritiro)}
+        </Field>
+        <Field label="Posizione">
+          {pickupMapsUrl ? (
+            <a
+              className="text-blue-700 underline"
+              href={pickupMapsUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Apri in Google Maps
+            </a>
+          ) : (
+            "—"
+          )}
         </Field>
         <Field label="Telefono ritiro">
           {displayValue(practice.telefono_ritiro)}

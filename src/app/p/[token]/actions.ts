@@ -470,7 +470,19 @@ export async function savePickupLocationAction(formData: FormData) {
   ) {
     invalidAction(token, "pickup_location");
   }
-  await updateCustomerPractice(practice.id, { ubicazione_auto: location });
+  const locationChanged = practice.ubicazione_auto !== location;
+  await updateCustomerPractice(practice.id, {
+    ubicazione_auto: location,
+    ...(locationChanged
+      ? {
+          indirizzo_ritiro: null,
+          ritiro_nome_attivita: null,
+          ritiro_place_id: null,
+          ritiro_lat: null,
+          ritiro_lng: null,
+        }
+      : {}),
+  });
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "ubicazione_auto",
   });
@@ -478,11 +490,58 @@ export async function savePickupLocationAction(formData: FormData) {
 }
 
 export async function savePickupAddressAction(formData: FormData) {
-  return saveTextField(
+  const { token, practice, navigation } = await getActionContext(
     formData,
     "pickup_address",
-    "indirizzo_ritiro",
   );
+  if (!practice.ubicazione_auto) invalidAction(token, "pickup_location");
+
+  const selectionMode = formData.get("selection_mode");
+  let values: {
+    indirizzo_ritiro: string;
+    ritiro_nome_attivita: string | null;
+    ritiro_place_id: string | null;
+    ritiro_lat: number | null;
+    ritiro_lng: number | null;
+  };
+  if (selectionMode === "place") {
+    const proof = formData.get("place_proof");
+    const place =
+      typeof proof === "string"
+        ? verifyPlaceSelectionProof(proof, practice.id)
+        : null;
+    if (!place) invalidAction(token, "pickup_address");
+    values = {
+      indirizzo_ritiro: place.formattedAddress,
+      ritiro_nome_attivita:
+        practice.ubicazione_auto === "casa"
+          ? null
+          : place.displayName.trim() || null,
+      ritiro_place_id: place.placeId,
+      ritiro_lat: place.lat,
+      ritiro_lng: place.lng,
+    };
+  } else if (selectionMode === "manual") {
+    const manualAddress = formData.get("manual_address");
+    if (typeof manualAddress !== "string" || !manualAddress.trim()) {
+      invalidAction(token, "pickup_address");
+    }
+    values = {
+      indirizzo_ritiro: manualAddress.trim(),
+      ritiro_nome_attivita: null,
+      ritiro_place_id: null,
+      ritiro_lat: null,
+      ritiro_lng: null,
+    };
+  } else {
+    invalidAction(token, "pickup_address");
+  }
+
+  await updateCustomerPractice(practice.id, values);
+  await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
+    campo: "indirizzo_ritiro",
+  });
+  finishAction(token, "pickup_address", navigation);
 }
 
 export async function savePickupPhoneAction(formData: FormData) {

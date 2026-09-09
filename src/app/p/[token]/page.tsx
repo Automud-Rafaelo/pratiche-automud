@@ -413,6 +413,9 @@ export default async function CustomerPage({
           {error}
           <PlaceAutocompleteField
             action={saveAgencyLocationAction}
+            defaultManualAddress={
+              defaultPlace ? "" : (practice.ricerca_indirizzo ?? "")
+            }
             defaultPlace={defaultPlace}
             defaultSelectionProof={defaultSelectionProof}
             manualFallback="on-error"
@@ -425,10 +428,47 @@ export default async function CustomerPage({
     );
   }
   if (screen === "pickup_address") {
-    const description = practice.ubicazione_auto === "casa"
-      ? customerCopy.pickupAddress.descriptions.home
-      : customerCopy.pickupAddress.descriptions.business;
-    return <TextScreenPage {...frameProps} {...customerCopy.pickupAddress} action={savePickupAddressAction} autoCapitalize="words" autoComplete="street-address" defaultValue={practice.indirizzo_ritiro ?? ""} description={description} errorMessage={errorMessage} screen={screen} token={token} />;
+    const isHome = practice.ubicazione_auto === "casa";
+    const pickupCopy = isHome
+      ? customerCopy.pickupAddress.home
+      : practice.ubicazione_auto === "deposito"
+        ? customerCopy.pickupAddress.storage
+        : customerCopy.pickupAddress.bodyShop;
+    const defaultPlace =
+      practice.indirizzo_ritiro &&
+      practice.ritiro_place_id &&
+      practice.ritiro_lat !== null &&
+      practice.ritiro_lng !== null
+        ? {
+            placeId: practice.ritiro_place_id,
+            displayName: practice.ritiro_nome_attivita ?? "",
+            formattedAddress: practice.indirizzo_ritiro,
+            lat: practice.ritiro_lat,
+            lng: practice.ritiro_lng,
+          }
+        : null;
+    const defaultSelectionProof = defaultPlace
+      ? createPlaceSelectionProof(practice.id, defaultPlace)
+      : null;
+    return (
+      <CustomerShell key={screen}>
+        <QuestionFrame {...frameProps} {...pickupCopy}>
+          {error}
+          <PlaceAutocompleteField
+            action={savePickupAddressAction}
+            defaultManualAddress={
+              defaultPlace ? "" : (practice.indirizzo_ritiro ?? "")
+            }
+            defaultPlace={defaultPlace}
+            defaultSelectionProof={defaultSelectionProof}
+            manualFallback={isHome ? "on-error" : "always"}
+            mode={isHome ? "address" : "establishment"}
+            screen={screen}
+            token={token}
+          />
+        </QuestionFrame>
+      </CustomerShell>
+    );
   }
   if (screen === "pickup_phone") {
     return <TextScreenPage {...frameProps} {...customerCopy.pickupPhone} action={savePickupPhoneAction} autoCapitalize="none" autoComplete="tel" defaultValue={practice.telefono_ritiro ?? ""} errorMessage={errorMessage} inputMode="tel" screen={screen} token={token} validationKind="phone" />;

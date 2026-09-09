@@ -130,7 +130,9 @@ Regole del calendario, calcolate lato server nel fuso `Europe/Rome`:
 
 ### Step 4 — Ritiro
 
-Chiedere, una schermata alla volta, dove si trova l'auto (`casa`, `deposito` o `carrozzeria`), l'indirizzo preciso e il telefono di contatto del carro attrezzi.
+Chiedere, una schermata alla volta, dove si trova l'auto (`casa`, `deposito` o `carrozzeria`), il luogo preciso e il telefono di contatto del carro attrezzi.
+
+Se l'auto è a casa, cercare via e numero civico con l'autocomplete indirizzi e chiedere conferma dell'indirizzo completo. Se è in deposito o carrozzeria, chiedere rispettivamente “Come si chiama il deposito?” o “Come si chiama la carrozzeria?”, con il sottotitolo “Scrivi il nome o la via, poi scegli dalla lista”, e usare l'autocomplete per attività commerciali. Alla selezione mostrare nome e indirizzo e salvarli insieme a place ID e coordinate. Il link “Non la trovo, scrivo l'indirizzo a mano” consente sempre il fallback al campo libero per deposito e carrozzeria. Se Places non è disponibile, il fallback manuale viene mostrato anche per l'indirizzo di casa e viene creato un avviso operatore con la causa.
 
 ### Completamento
 
@@ -199,6 +201,7 @@ Mostra:
 
 - riepilogo dei dati operatore e link cliente;
 - dati cliente in sola lettura, raggruppati per step, usando “—” per i valori mancanti;
+- per il ritiro, nome dell'attività se presente, indirizzo e link “Apri in Google Maps” quando sono disponibili le coordinate;
 - cinque verifiche a tre stati con etichette italiane e il bottone “Verifiche completate”;
 - preferenza del cliente, agenzia scelta con telefono ed email, data e fascia dell'appuntamento confermato modificabili;
 - note operatore modificabili;
