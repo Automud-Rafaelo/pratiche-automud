@@ -27,7 +27,7 @@ function redirectWithMessage(
   practiceId: string,
   message: string,
   cause?: string,
-) {
+): never {
   revalidatePath("/admin");
   revalidatePath(`/admin/pratiche/${practiceId}`);
   const query = new URLSearchParams({ notice: message });
@@ -35,13 +35,16 @@ function redirectWithMessage(
   redirect(`/admin/pratiche/${practiceId}?${query.toString()}`);
 }
 
-async function handleSupabaseError(practiceId: string, message: string) {
+async function handleSupabaseError(
+  practiceId: string,
+  message: string,
+): Promise<never> {
   await reportExternalServiceError({
     source: "Supabase",
     message,
     practiceId,
   });
-  redirectWithMessage(practiceId, "service_error", message);
+  return redirectWithMessage(practiceId, "service_error", message);
 }
 
 function parseVerification(value: FormDataEntryValue | null) {
@@ -204,6 +207,12 @@ export async function savePriceAction(formData: FormData) {
     await handleSupabaseError(
       practiceId,
       `Lettura prezzo concordato fallita: ${loadError.message}`,
+    );
+  }
+  if (!data) {
+    return handleSupabaseError(
+      practiceId,
+      "Lettura prezzo concordato fallita: pratica non trovata",
     );
   }
 

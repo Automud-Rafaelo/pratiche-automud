@@ -113,7 +113,7 @@ function getBackHref(
   return previous ? `/p/${token}?view=${previous}#top` : null;
 }
 
-function getServerErrorMessage(screen: CustomerScreenId, errorCode?: string) {
+function getServerErrorMessage(screen: CustomerScreenId) {
   if (screen === "tax_code") return customerCopy.taxCode.error;
   if (screen === "iban") return customerCopy.iban.error;
   if (screen === "pickup_phone") return customerCopy.pickupPhone.error;
@@ -292,7 +292,7 @@ export default async function CustomerPage({
     backHref: getBackHref(token, screen, navigation),
   };
   const errorMessage = query.error
-    ? getServerErrorMessage(screen, query.error)
+    ? getServerErrorMessage(screen)
     : null;
   const error = errorMessage ? (
     <p className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">

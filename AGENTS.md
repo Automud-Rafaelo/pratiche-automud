@@ -31,7 +31,7 @@ Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
 - TypeScript
 - Tailwind CSS
 - Supabase Postgres tramite `@supabase/supabase-js`
-- Google Maps Platform: Places API (New) e Geocoding API, esclusivamente lato server
+- Google Maps Platform: Places API (New), esclusivamente lato server
 - Deploy su Vercel
 
 ## Attori e responsabilità
@@ -309,10 +309,16 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 4. chiudere il browser a metà percorso e riaprire lo stesso link, verificando la ripresa dal primo dato mancante;
 5. riaprire il link dopo il completamento e verificare che compaia sempre la schermata finale;
 6. completare il ramo proprietario “No” con orari del proprietario sconosciuti;
-7. cercare una posizione, selezionare un suggerimento, confermare l'indirizzo e verificare che le agenzie siano ordinate per distanza;
+7. cercare una posizione, selezionare un suggerimento, usare “Cambia”, selezionare di nuovo e confermare l'indirizzo, verificando che le agenzie siano ordinate per distanza;
 8. usare una posizione senza agenzie nel raggio e verificare avviso, quattro opzioni più vicine ed evento `nessuna_agenzia_nel_raggio`;
-9. contestare la targa, inserire quella del libretto e verificare normalizzazione, avviso non bloccante ed evento con entrambe le targhe;
-10. controllare nel pannello admin che tutti i dati e gli eventi siano corretti e che le targhe operatore/cliente siano evidenti.
+9. scegliere il ritiro a casa, selezionare e confermare un indirizzo tramite autocomplete;
+10. scegliere il ritiro in carrozzeria, selezionare e confermare nome e indirizzo tramite autocomplete e verificare il link Google Maps nel pannello;
+11. verificare il fallback “Non la trovo, scrivo l'indirizzo a mano” e il fallback manuale quando Places non è disponibile;
+12. contestare la targa, inserire quella del libretto e verificare normalizzazione, avviso non bloccante ed evento con entrambe le targhe;
+13. modificare il prezzo dal pannello, riaprire la schermata iniziale cliente e verificare che mostri subito il valore corrente e l'evento `prezzo_modificato`;
+14. verificare nel pannello la tabella dei tempi, includendo le schermate ripetute tornando indietro, e i timestamp del log fino ai secondi;
+15. eliminare una pratica digitando la targa, quindi verificare che scompaiano dati collegati e avvisi e che il link cliente mostri la pagina di link non valido;
+16. controllare nel pannello admin che tutti i dati e gli eventi siano corretti e che le targhe operatore/cliente siano evidenti.
 
 ## Variabili d'ambiente
 
@@ -328,7 +334,7 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 
 ## Stato di avanzamento
 
-Ultimo aggiornamento: 5 settembre 2026.
+Ultimo aggiornamento: 9 settembre 2026.
 
 Completato:
 
@@ -336,7 +342,7 @@ Completato:
 - dipendenza `@supabase/supabase-js`;
 - specifica aggiornata al flusso cliente senza verifiche bloccanti;
 - regole di business centralizzate aggiornate;
-- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente e migration per `targa_cliente`;
+- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente, migration per `targa_cliente` e migration unica per Places, campi ritiro, rimozione CAP cliente e cancellazioni a cascata;
 - autenticazione admin con cookie firmato, scadenza a 12 ore e rate limit persistente per IP;
 - lista pratiche con filtro “Da verificare” e indicatori di attenzione;
 - creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
@@ -347,14 +353,19 @@ Completato:
 - navigazione cliente basata su un ordine fisso, con precedente/successiva applicabile e ripresa separata dal primo dato mancante;
 - validazione server e browser di codice fiscale, incluso il carattere di controllo, IBAN e telefono;
 - ricerca posizione cliente tramite Places Autocomplete e conferma dell'indirizzo;
+- proxy Places autenticato dal token pratica, con session token server-side, field mask minima, limite persistente di 30 richieste al minuto e provider sostituibile;
+- autocomplete del ritiro per casa, deposito e carrozzeria, con conferma, dati strutturati e fallback manuale;
 - acquisizione della targa indicata dal cliente e visualizzazione delle due targhe nel pannello;
 - normalizzazione di marca e modello alla creazione della pratica;
 - calcolo Haversine dalle coordinate scelte, fallback senza agenzia ed eventi di attenzione;
 - calendario server-side basato esclusivamente su `getAppointmentPreferenceOptions`;
 - pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
+- tempi di completamento delle singole schermate, incluse ripetizioni, riepilogati nel pannello;
+- modifica del prezzo concordato con storico evento e lettura dinamica nel flusso cliente;
+- eliminazione definitiva della pratica e dei dati collegati tramite conferma della targa;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
 - import Places in batch da dieci con riepilogo e causa degli errori;
-- test automatici per navigazione, validazioni, calendario e Haversine;
+- test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, provider Places e tempi schermata;
 - `.env.example` completo;
 - istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.
 

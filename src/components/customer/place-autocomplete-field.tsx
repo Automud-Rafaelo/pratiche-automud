@@ -46,7 +46,6 @@ export function PlaceAutocompleteField({
 }: PlaceAutocompleteFieldProps) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<ResolvedPlace | null>(
     defaultPlace,
   );
@@ -61,6 +60,7 @@ export function PlaceAutocompleteField({
   const [manualAddress, setManualAddress] = useState(defaultManualAddress);
   const [activeIndex, setActiveIndex] = useState(-1);
   const requestSequence = useRef(0);
+  const sessionToken = useRef<string | null>(null);
   const copy = customerCopy.placesAutocomplete;
 
   useEffect(() => {
@@ -71,15 +71,12 @@ export function PlaceAutocompleteField({
       normalizedQuery.length <
         BUSINESS_RULES.placesAutocomplete.minimumInputLength
     ) {
-      setSuggestions([]);
-      setLoading(false);
       return;
     }
 
     const controller = new AbortController();
     const sequence = requestSequence.current + 1;
     requestSequence.current = sequence;
-    setLoading(true);
     const timeout = window.setTimeout(async () => {
       setUnavailable(false);
       try {
@@ -90,14 +87,14 @@ export function PlaceAutocompleteField({
             token,
             input: normalizedQuery,
             mode,
-            sessionToken: sessionToken ?? undefined,
+            sessionToken: sessionToken.current ?? undefined,
           }),
           signal: controller.signal,
         });
         if (!response.ok) throw new Error("Places suggestions unavailable");
         const payload = (await response.json()) as SuggestResponse;
         if (sequence !== requestSequence.current) return;
-        setSessionToken(payload.sessionToken ?? null);
+        sessionToken.current = payload.sessionToken ?? null;
         setSuggestions(payload.suggestions ?? []);
         setActiveIndex(-1);
       } catch (error) {
@@ -114,10 +111,10 @@ export function PlaceAutocompleteField({
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [manual, mode, query, selectedPlace, sessionToken, token]);
+  }, [manual, mode, query, selectedPlace, token]);
 
   async function selectSuggestion(suggestion: PlaceSuggestion) {
-    if (!sessionToken) return;
+    if (!sessionToken.current) return;
     setLoading(true);
     setUnavailable(false);
     try {
@@ -128,7 +125,7 @@ export function PlaceAutocompleteField({
           token,
           placeId: suggestion.placeId,
           mode,
-          sessionToken,
+          sessionToken: sessionToken.current,
         }),
       });
       if (!response.ok) throw new Error("Place details unavailable");
@@ -151,7 +148,7 @@ export function PlaceAutocompleteField({
     setSelectedPlace(null);
     setQuery("");
     setSuggestions([]);
-    setSessionToken(null);
+    sessionToken.current = null;
     setSelectionProof(null);
     setUnavailable(false);
     setManual(false);
@@ -281,7 +278,20 @@ export function PlaceAutocompleteField({
         autoComplete="off"
         className={inputClass}
         id={`${screen}-place-query`}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => {
+          const value = event.target.value;
+          setQuery(value);
+          setUnavailable(false);
+          if (
+            value.trim().length >=
+            BUSINESS_RULES.placesAutocomplete.minimumInputLength
+          ) {
+            setLoading(true);
+          } else {
+            setSuggestions([]);
+            setLoading(false);
+          }
+        }}
         onFocus={handleFocus}
         onKeyDown={handleKeyDown}
         placeholder={

@@ -85,6 +85,17 @@ begin
 end;
 $$;
 
+revoke all on function public.reserve_place_autocomplete_request(
+  uuid,
+  timestamptz,
+  integer
+) from public, anon, authenticated;
+grant execute on function public.reserve_place_autocomplete_request(
+  uuid,
+  timestamptz,
+  integer
+) to service_role;
+
 comment on column public.pratiche.ricerca_indirizzo is
   'Formatted place address selected by the customer to find nearby agencies.';
 comment on column public.pratiche.ricerca_place_id is

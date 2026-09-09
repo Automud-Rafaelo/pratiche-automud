@@ -66,6 +66,7 @@ export const BUSINESS_RULES = {
     selectionProofMaxAgeMs: 30 * 60_000,
     includedRegionCodes: ["it"],
     addressPrimaryTypes: ["street_address", "premise", "subpremise"],
+    establishmentPredictionTypes: ["establishment", "car_repair", "storage"],
   },
   validation: {
     phonePattern: /^\+?[\d\s().-]{7,20}$/,

@@ -110,10 +110,8 @@ function getApiError(
 
 function isEstablishmentPrediction(types: string[] | undefined) {
   if (!types || types.length === 0) return true;
-  return (
-    types.includes("establishment") ||
-    types.includes("car_repair") ||
-    types.includes("storage")
+  return BUSINESS_RULES.placesAutocomplete.establishmentPredictionTypes.some(
+    (type) => types.includes(type),
   );
 }
 
