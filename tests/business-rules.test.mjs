@@ -8,6 +8,7 @@ import {
   isValidItalianTaxCode,
   isValidPhone,
   normalizeVehicleName,
+  parseMoneyAmount,
 } from "../src/lib/config/business-rules.ts";
 
 test("validates Italian tax-code format and check character", () => {
@@ -31,6 +32,13 @@ test("validates phone numbers", () => {
 
 test("capitalizes every word in vehicle make and model", () => {
   assert.equal(normalizeVehicleName("  audi   a3 "), "Audi A3");
+});
+
+test("parses non-negative money amounts with comma or dot", () => {
+  assert.equal(parseMoneyAmount("1250,50"), 1250.5);
+  assert.equal(parseMoneyAmount("1250.50"), 1250.5);
+  assert.equal(parseMoneyAmount("-1"), null);
+  assert.equal(parseMoneyAmount("not-a-price"), null);
 });
 
 test("returns exactly three appointment days and skips Sunday", () => {

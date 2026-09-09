@@ -8,6 +8,7 @@ import { recordAdminEvent } from "@/lib/admin/events";
 import {
   APPOINTMENT_SLOTS,
   VERIFICATION_FIELDS,
+  parseMoneyAmount,
   type VerificationField,
 } from "@/lib/config/business-rules";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
@@ -182,4 +183,46 @@ export async function saveNotesAction(formData: FormData) {
 
   await recordAdminEvent(practiceId, "note_operatore_aggiornate");
   redirectWithMessage(practiceId, "notes_saved");
+}
+
+export async function savePriceAction(formData: FormData) {
+  await requireAdminSession();
+  const practiceId = getPracticeId(formData);
+  const rawPrice = formData.get("prezzo_concordato");
+  const price =
+    typeof rawPrice === "string" ? parseMoneyAmount(rawPrice) : null;
+  if (price === null) redirectWithMessage(practiceId, "price_invalid");
+
+  const supabase = createAdminSupabaseClient();
+  const { data, error: loadError } = await supabase
+    .from("pratiche")
+    .select("prezzo_concordato")
+    .eq("id", practiceId)
+    .single();
+  if (loadError) {
+    await handleSupabaseError(
+      practiceId,
+      `Lettura prezzo concordato fallita: ${loadError.message}`,
+    );
+  }
+
+  const previousPrice = Number(data.prezzo_concordato);
+  if (previousPrice !== price) {
+    const { error } = await supabase
+      .from("pratiche")
+      .update({ prezzo_concordato: price })
+      .eq("id", practiceId);
+    if (error) {
+      await handleSupabaseError(
+        practiceId,
+        `Salvataggio prezzo concordato fallito: ${error.message}`,
+      );
+    }
+    await recordAdminEvent(practiceId, "prezzo_modificato", {
+      da: previousPrice,
+      a: price,
+    });
+  }
+
+  redirectWithMessage(practiceId, "price_saved");
 }

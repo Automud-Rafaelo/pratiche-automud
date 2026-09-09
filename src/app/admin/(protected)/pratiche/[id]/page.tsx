@@ -22,6 +22,7 @@ import {
   completeVerificationsAction,
   saveAppointmentAction,
   saveNotesAction,
+  savePriceAction,
   saveVerificationsAction,
 } from "./actions";
 
@@ -38,6 +39,8 @@ const noticeMessages: Record<string, string> = {
   appointment_saved: "Appuntamento salvato.",
   appointment_invalid: "Inserisci sia la data sia la fascia, oppure nessuna.",
   notes_saved: "Note salvate.",
+  price_saved: "Prezzo concordato salvato.",
+  price_invalid: "Inserisci un prezzo valido.",
   service_error: "Operazione non riuscita.",
 };
 
@@ -216,7 +219,28 @@ export default async function PracticeDetailPage({
           {practice.tipo_pratica === "atto_demo" ? "Atto demo" : "Dini"}
         </Field>
         <Field label="Prezzo concordato">
-          {formatMoney(practice.prezzo_concordato)}
+          <form action={savePriceAction} className="flex flex-wrap gap-2">
+            <input name="practice_id" type="hidden" value={practice.id} />
+            <input
+              className="w-36 rounded-md border border-slate-300 px-3 py-2"
+              defaultValue={practice.prezzo_concordato}
+              inputMode="decimal"
+              min="0"
+              name="prezzo_concordato"
+              required
+              step="0.01"
+              type="number"
+            />
+            <button
+              className="rounded-md bg-slate-900 px-3 py-2 font-medium text-white"
+              type="submit"
+            >
+              Salva
+            </button>
+          </form>
+          <span className="mt-1 block text-xs text-slate-500">
+            Valore attuale: {formatMoney(practice.prezzo_concordato)}
+          </span>
         </Field>
         <Field label="Stato">{formatStatus(practice.status)}</Field>
         <Field label="Targa operatore">{practice.targa}</Field>

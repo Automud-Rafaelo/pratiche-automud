@@ -95,6 +95,11 @@ export function normalizeAgencyKeyPart(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+export function parseMoneyAmount(value: string) {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 export function normalizeUppercaseValue(value: string) {
   return value.toUpperCase().replace(/\s+/g, "");
 }

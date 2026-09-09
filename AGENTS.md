@@ -200,6 +200,7 @@ Form con `tipo_pratica`, `prezzo_concordato`, `targa`, `marca` e `modello`. Norm
 Mostra:
 
 - riepilogo dei dati operatore e link cliente;
+- prezzo concordato modificabile con un evento `prezzo_modificato` contenente `{ da, a }` per ogni variazione;
 - dati cliente in sola lettura, raggruppati per step, usando “—” per i valori mancanti;
 - per il ritiro, nome dell'attività se presente, indirizzo e link “Apri in Google Maps” quando sono disponibili le coordinate;
 - cinque verifiche a tre stati con etichette italiane e il bottone “Verifiche completate”;

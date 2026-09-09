@@ -8,6 +8,7 @@ import {
   BUSINESS_RULES,
   normalizeVehicleName,
   normalizeVehiclePlate,
+  parseMoneyAmount,
   PRACTICE_TYPES,
 } from "@/lib/config/business-rules";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
@@ -33,11 +34,10 @@ export async function createPracticeAction(formData: FormData) {
     redirect("/admin/pratiche/nuova?error=invalid");
   }
 
-  const price = Number(priceRaw.replace(",", "."));
+  const price = parseMoneyAmount(priceRaw);
   const plate = normalizeVehiclePlate(plateRaw);
   if (
-    !Number.isFinite(price) ||
-    price < 0 ||
+    price === null ||
     !plate ||
     !make.trim() ||
     !model.trim()
