@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { AgencyQuestion } from "@/components/customer/agency-question";
 import { AppointmentQuestion } from "@/components/customer/appointment-question";
 import { ChoiceQuestion } from "@/components/customer/choice-question";
 import { CustomerShell } from "@/components/customer/customer-shell";
+import { PlaceAutocompleteField } from "@/components/customer/place-autocomplete-field";
 import {
   primaryButtonClass,
   QuestionFrame,
@@ -33,6 +33,7 @@ import {
   type CustomerNavigationContext,
   type CustomerScreenId,
 } from "@/lib/customer/navigation";
+import { createPlaceSelectionProof } from "@/lib/customer/place-selection";
 import { getWhatsAppUrl } from "@/lib/customer/whatsapp";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
@@ -43,6 +44,7 @@ import {
   acknowledgeOwnerNoticeAction,
   continueWithoutAgencyAction,
   saveAgencyAction,
+  saveAgencyLocationAction,
   saveAppointmentPreferenceAction,
   saveCoownershipAction,
   saveCustomerPlateAction,
@@ -56,7 +58,6 @@ import {
   savePickupLocationAction,
   savePickupPhoneAction,
   savePlateConfirmationAction,
-  savePostalCodeAction,
   saveTaxCodeAction,
   startCustomerFlowAction,
 } from "./actions";
@@ -112,14 +113,9 @@ function getBackHref(
   return previous ? `/p/${token}?view=${previous}#top` : null;
 }
 
-function getServerErrorMessage(screen: CustomerScreenId, errorCode?: string) {
+function getServerErrorMessage(screen: CustomerScreenId) {
   if (screen === "tax_code") return customerCopy.taxCode.error;
   if (screen === "iban") return customerCopy.iban.error;
-  if (screen === "postal_code") {
-    return errorCode === "postal_not_found"
-      ? customerCopy.postalCode.notFoundError
-      : customerCopy.postalCode.error;
-  }
   if (screen === "pickup_phone") return customerCopy.pickupPhone.error;
   return customerCopy.temporaryError.description;
 }
@@ -130,7 +126,6 @@ type TextScreenId =
   | "tax_code"
   | "iban"
   | "customer_plate"
-  | "postal_code"
   | "pickup_address"
   | "pickup_phone";
 
@@ -140,7 +135,6 @@ const CUSTOMER_TEXT_FIELDS: Record<TextScreenId, string> = {
   tax_code: "codice_fiscale",
   iban: "iban",
   customer_plate: "targa_cliente",
-  postal_code: "cap",
   pickup_address: "indirizzo_ritiro",
   pickup_phone: "telefono_ritiro",
 };
@@ -179,7 +173,6 @@ function TextScreenPage({
     | "tax_code"
     | "iban"
     | "vehicle_plate"
-    | "postal_code"
     | "phone";
   inputMode?: "text" | "numeric" | "tel";
   autoComplete?: string;
@@ -210,11 +203,9 @@ function TextScreenPage({
               ? customerCopy.taxCode.error
               : validationKind === "iban"
                 ? customerCopy.iban.error
-                : validationKind === "postal_code"
-                  ? customerCopy.postalCode.error
-                  : validationKind === "phone"
-                    ? customerCopy.pickupPhone.error
-                    : undefined
+                : validationKind === "phone"
+                  ? customerCopy.pickupPhone.error
+                  : undefined
           }
           inputMode={inputMode}
           label={label}
@@ -289,6 +280,11 @@ export default async function CustomerPage({
     await recordCustomerEventOnce(practice.id, "link_aperto");
   }
   const screen = getVisibleCustomerScreen(practice, events, query.view);
+  if (screen !== "complete") {
+    await recordCustomerEvent(practice.id, "schermata_visualizzata", {
+      schermata: screen,
+    });
+  }
   const navigation = getCustomerNavigationContext(practice, events);
   const progress = getCustomerProgress(screen, navigation);
   const frameProps = {
@@ -296,7 +292,7 @@ export default async function CustomerPage({
     backHref: getBackHref(token, screen, navigation),
   };
   const errorMessage = query.error
-    ? getServerErrorMessage(screen, query.error)
+    ? getServerErrorMessage(screen)
     : null;
   const error = errorMessage ? (
     <p className="mb-3 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
@@ -382,7 +378,11 @@ export default async function CustomerPage({
   }
 
   if (screen === "first_name") {
-    return <TextScreenPage {...frameProps} {...customerCopy.firstName} action={saveFirstNameAction} autoCapitalize="words" autoComplete="given-name" defaultValue={practice.nome ?? ""} errorMessage={errorMessage} screen={screen} token={token} />;
+    const description =
+      practice.is_proprietario === false
+        ? `${customerCopy.firstName.description} ${customerCopy.firstName.ownerDescription}`
+        : customerCopy.firstName.description;
+    return <TextScreenPage {...frameProps} {...customerCopy.firstName} action={saveFirstNameAction} autoCapitalize="words" autoComplete="given-name" defaultValue={practice.nome ?? ""} description={description} errorMessage={errorMessage} screen={screen} token={token} />;
   }
   if (screen === "last_name") {
     return <TextScreenPage {...frameProps} {...customerCopy.lastName} action={saveLastNameAction} autoCapitalize="words" autoComplete="family-name" defaultValue={practice.cognome ?? ""} errorMessage={errorMessage} screen={screen} token={token} />;
@@ -399,14 +399,85 @@ export default async function CustomerPage({
   if (screen === "customer_plate") {
     return <TextScreenPage {...frameProps} {...customerCopy.customerPlate} action={saveCustomerPlateAction} autoCapitalize="characters" autoComplete="off" defaultValue={practice.targa_cliente ?? ""} errorMessage={errorMessage} screen={screen} token={token} validationKind="vehicle_plate" warningMessage={customerCopy.customerPlate.warning} />;
   }
-  if (screen === "postal_code") {
-    return <TextScreenPage {...frameProps} {...customerCopy.postalCode} action={savePostalCodeAction} autoCapitalize="none" autoComplete="postal-code" defaultValue={practice.cap ?? ""} errorMessage={errorMessage} inputMode="numeric" screen={screen} token={token} validationKind="postal_code" />;
+  if (screen === "agency_location") {
+    const defaultPlace =
+      practice.ricerca_indirizzo &&
+      practice.ricerca_place_id &&
+      practice.ricerca_lat !== null &&
+      practice.ricerca_lng !== null
+        ? {
+            placeId: practice.ricerca_place_id,
+            displayName: "",
+            formattedAddress: practice.ricerca_indirizzo,
+            lat: practice.ricerca_lat,
+            lng: practice.ricerca_lng,
+          }
+        : null;
+    const defaultSelectionProof = defaultPlace
+      ? createPlaceSelectionProof(practice.id, defaultPlace)
+      : null;
+    return (
+      <CustomerShell key={screen}>
+        <QuestionFrame {...frameProps} {...customerCopy.agencyLocation}>
+          {error}
+          <PlaceAutocompleteField
+            action={saveAgencyLocationAction}
+            defaultManualAddress={
+              defaultPlace ? "" : (practice.ricerca_indirizzo ?? "")
+            }
+            defaultPlace={defaultPlace}
+            defaultSelectionProof={defaultSelectionProof}
+            manualFallback="on-error"
+            mode="address"
+            screen={screen}
+            token={token}
+          />
+        </QuestionFrame>
+      </CustomerShell>
+    );
   }
   if (screen === "pickup_address") {
-    const description = practice.ubicazione_auto === "casa"
-      ? customerCopy.pickupAddress.descriptions.home
-      : customerCopy.pickupAddress.descriptions.business;
-    return <TextScreenPage {...frameProps} {...customerCopy.pickupAddress} action={savePickupAddressAction} autoCapitalize="words" autoComplete="street-address" defaultValue={practice.indirizzo_ritiro ?? ""} description={description} errorMessage={errorMessage} screen={screen} token={token} />;
+    const isHome = practice.ubicazione_auto === "casa";
+    const pickupCopy = isHome
+      ? customerCopy.pickupAddress.home
+      : practice.ubicazione_auto === "deposito"
+        ? customerCopy.pickupAddress.storage
+        : customerCopy.pickupAddress.bodyShop;
+    const defaultPlace =
+      practice.indirizzo_ritiro &&
+      practice.ritiro_place_id &&
+      practice.ritiro_lat !== null &&
+      practice.ritiro_lng !== null
+        ? {
+            placeId: practice.ritiro_place_id,
+            displayName: practice.ritiro_nome_attivita ?? "",
+            formattedAddress: practice.indirizzo_ritiro,
+            lat: practice.ritiro_lat,
+            lng: practice.ritiro_lng,
+          }
+        : null;
+    const defaultSelectionProof = defaultPlace
+      ? createPlaceSelectionProof(practice.id, defaultPlace)
+      : null;
+    return (
+      <CustomerShell key={screen}>
+        <QuestionFrame {...frameProps} {...pickupCopy}>
+          {error}
+          <PlaceAutocompleteField
+            action={savePickupAddressAction}
+            defaultManualAddress={
+              defaultPlace ? "" : (practice.indirizzo_ritiro ?? "")
+            }
+            defaultPlace={defaultPlace}
+            defaultSelectionProof={defaultSelectionProof}
+            manualFallback={isHome ? "on-error" : "always"}
+            mode={isHome ? "address" : "establishment"}
+            screen={screen}
+            token={token}
+          />
+        </QuestionFrame>
+      </CustomerShell>
+    );
   }
   if (screen === "pickup_phone") {
     return <TextScreenPage {...frameProps} {...customerCopy.pickupPhone} action={savePickupPhoneAction} autoCapitalize="none" autoComplete="tel" defaultValue={practice.telefono_ritiro ?? ""} errorMessage={errorMessage} inputMode="tel" screen={screen} token={token} validationKind="phone" />;
@@ -483,18 +554,22 @@ export default async function CustomerPage({
   }
 
   if (screen === "agency") {
-    const nearby = practice.cap
-      ? await findNearbyAgencies(practice.id, practice.cap)
-      : { ok: false as const, reason: "not_found" as const, error: "CAP assente" };
+    const nearby =
+      practice.ricerca_lat !== null && practice.ricerca_lng !== null
+        ? await findNearbyAgencies(practice.id, {
+            lat: practice.ricerca_lat,
+            lng: practice.ricerca_lng,
+          })
+        : {
+            ok: false as const,
+            error: "Coordinate della posizione di ricerca assenti",
+          };
     if (!nearby.ok) {
-      if (nearby.reason === "not_found") {
-        redirect(`/p/${token}?view=postal_code&error=postal_not_found#top`);
-      }
-      if (practice.cap) {
+      if (practice.ricerca_indirizzo) {
         await recordCustomerEvent(
           practice.id,
-          "geocoding_fallito",
-          { cap: practice.cap, errore: nearby.error },
+          "ricerca_agenzie_fallita",
+          { indirizzo: practice.ricerca_indirizzo, errore: nearby.error },
         );
       }
       const fallbackNavigation = {
@@ -519,12 +594,15 @@ export default async function CustomerPage({
       );
     }
 
-    if (nearby.noneWithinRadius && practice.cap) {
+    if (nearby.noneWithinRadius && practice.ricerca_indirizzo) {
       await recordCustomerEventOnce(
         practice.id,
         "nessuna_agenzia_nel_raggio",
-        { cap: practice.cap, raggio_km: BUSINESS_RULES.nearbyAgencies.radiusKm },
-        { key: "cap", value: practice.cap },
+        {
+          indirizzo_ricerca: practice.ricerca_indirizzo,
+          raggio_km: BUSINESS_RULES.nearbyAgencies.radiusKm,
+        },
+        { key: "indirizzo_ricerca", value: practice.ricerca_indirizzo },
       );
     }
 

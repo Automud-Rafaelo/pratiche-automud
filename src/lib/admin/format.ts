@@ -28,8 +28,13 @@ export function formatDate(value: string | null) {
 export function formatDateTime(value: string | null) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("it-IT", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
     timeZone: "Europe/Rome",
   }).format(new Date(value));
 }

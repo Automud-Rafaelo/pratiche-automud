@@ -6,7 +6,6 @@ import { useState } from "react";
 import {
   BUSINESS_RULES,
   isValidIban,
-  isValidItalianPostalCode,
   isValidItalianTaxCode,
   isValidPhone,
   normalizeVehiclePlate,
@@ -19,7 +18,6 @@ type ValidationKind =
   | "text"
   | "tax_code"
   | "iban"
-  | "postal_code"
   | "phone"
   | "vehicle_plate";
 
@@ -27,7 +25,6 @@ function isValid(value: string, kind: ValidationKind) {
   const trimmed = value.trim();
   if (kind === "tax_code") return isValidItalianTaxCode(trimmed);
   if (kind === "iban") return isValidIban(trimmed);
-  if (kind === "postal_code") return isValidItalianPostalCode(trimmed);
   if (kind === "phone") return isValidPhone(trimmed);
   if (kind === "vehicle_plate") return normalizeVehiclePlate(trimmed).length > 0;
   return trimmed.length > 0;

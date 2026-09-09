@@ -8,16 +8,12 @@ import {
   PICKUP_LOCATIONS,
   getAppointmentPreferenceOptions,
   isValidIban,
-  isValidItalianPostalCode,
   isValidItalianTaxCode,
   isValidPhone,
   normalizeUppercaseValue,
   normalizeVehiclePlate,
 } from "@/lib/config/business-rules";
-import {
-  findNearbyAgencies,
-  geocodePostalCode,
-} from "@/lib/customer/agencies";
+import { findNearbyAgencies } from "@/lib/customer/agencies";
 import {
   loadCustomerPractice,
   recordCustomerEvent,
@@ -33,6 +29,8 @@ import {
   type CustomerNavigationContext,
   type CustomerScreenId,
 } from "@/lib/customer/navigation";
+import { verifyPlaceSelectionProof } from "@/lib/customer/place-selection";
+import { calculateScreenDurationMs } from "@/lib/customer/screen-timing";
 
 async function getActionContext(formData: FormData, expected: CustomerScreenId) {
   const token = formData.get("token");
@@ -59,11 +57,18 @@ async function getActionContext(formData: FormData, expected: CustomerScreenId) 
   };
 }
 
-function finishAction(
+async function finishAction(
   token: string,
   screen: CustomerScreenId,
   navigation: CustomerNavigationContext,
-): never {
+): Promise<never> {
+  const context = await loadCustomerPractice(token);
+  if (context) {
+    await recordCustomerEvent(context.practice.id, "schermata_completata", {
+      schermata: screen,
+      durata_ms: calculateScreenDurationMs(context.events, screen),
+    });
+  }
   revalidatePath(`/p/${token}`);
   const nextScreen = getNextCustomerScreen(screen, navigation);
   redirect(nextScreen ? `/p/${token}?view=${nextScreen}#top` : `/p/${token}`);
@@ -86,7 +91,7 @@ export async function startCustomerFlowAction(formData: FormData) {
     await updateCustomerPractice(practice.id, { status: "step1_dati" });
     await recordCustomerEventOnce(practice.id, "link_aperto");
   }
-  finishAction(token, "welcome", navigation);
+  return finishAction(token, "welcome", navigation);
 }
 
 export async function saveOwnerAction(formData: FormData) {
@@ -102,7 +107,7 @@ export async function saveOwnerAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "is_proprietario",
   });
-  finishAction(token, "owner", {
+  return finishAction(token, "owner", {
     ...navigation,
     isOwner: value === "yes",
   });
@@ -117,7 +122,7 @@ export async function acknowledgeOwnerNoticeAction(formData: FormData) {
     practice.id,
     "proprietario_assente_avviso_visto",
   );
-  finishAction(token, "owner_notice", navigation);
+  return finishAction(token, "owner_notice", navigation);
 }
 
 async function saveTextField(
@@ -138,7 +143,7 @@ async function saveTextField(
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: field,
   });
-  finishAction(token, screen, navigation);
+  return finishAction(token, screen, navigation);
 }
 
 export async function saveFirstNameAction(formData: FormData) {
@@ -185,7 +190,7 @@ export async function savePlateConfirmationAction(formData: FormData) {
       "targa_contestata_richiesta",
       { targa_operatore: practice.targa },
     );
-    finishAction(token, "plate", {
+    return finishAction(token, "plate", {
       ...navigation,
       hasDisputedPlate: true,
     });
@@ -202,7 +207,7 @@ export async function savePlateConfirmationAction(formData: FormData) {
         stato: "step2_agenzia",
       });
     }
-    finishAction(token, "plate", {
+    return finishAction(token, "plate", {
       ...navigation,
       hasDisputedPlate: false,
     });
@@ -234,46 +239,67 @@ export async function saveCustomerPlateAction(formData: FormData) {
       stato: "step2_agenzia",
     });
   }
-  finishAction(token, "customer_plate", {
+  return finishAction(token, "customer_plate", {
     ...navigation,
     hasDisputedPlate: true,
   });
 }
 
-export async function savePostalCodeAction(formData: FormData) {
+export async function saveAgencyLocationAction(formData: FormData) {
   const { token, practice, navigation } = await getActionContext(
     formData,
-    "postal_code",
+    "agency_location",
   );
-  const rawValue = formData.get("cap");
-  const postalCode = typeof rawValue === "string" ? rawValue.trim() : "";
-  if (!isValidItalianPostalCode(postalCode)) {
-    invalidAction(token, "postal_code");
-  }
+  const selectionMode = formData.get("selection_mode");
+  let values: {
+    ricerca_indirizzo: string;
+    ricerca_place_id: string | null;
+    ricerca_lat: number | null;
+    ricerca_lng: number | null;
+  };
 
-  const geocoding = await geocodePostalCode(practice.id, postalCode);
-  if (geocoding.status === "not_found") {
-    invalidAction(token, "postal_code", "postal_not_found");
-  }
-
-  const useAgencyFallback = geocoding.status === "unavailable";
-  await updateCustomerPractice(practice.id, { cap: postalCode });
-  await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
-    campo: "cap",
-  });
-  if (geocoding.status === "unavailable") {
-    await recordCustomerEvent(practice.id, "geocoding_fallito", {
-      cap: postalCode,
-      errore: geocoding.error,
-    });
+  if (selectionMode === "place") {
+    const proof = formData.get("place_proof");
+    const place =
+      typeof proof === "string"
+        ? verifyPlaceSelectionProof(proof, practice.id)
+        : null;
+    if (!place) invalidAction(token, "agency_location");
+    values = {
+      ricerca_indirizzo: place.formattedAddress,
+      ricerca_place_id: place.placeId,
+      ricerca_lat: place.lat,
+      ricerca_lng: place.lng,
+    };
+  } else if (selectionMode === "manual") {
+    const manualAddress = formData.get("manual_address");
+    if (typeof manualAddress !== "string" || !manualAddress.trim()) {
+      invalidAction(token, "agency_location");
+    }
+    values = {
+      ricerca_indirizzo: manualAddress.trim(),
+      ricerca_place_id: null,
+      ricerca_lat: null,
+      ricerca_lng: null,
+    };
   } else {
-    await recordCustomerEvent(practice.id, "geocoding_riuscito", {
-      cap: postalCode,
-    });
+    invalidAction(token, "agency_location");
   }
-  finishAction(token, "postal_code", {
+
+  await updateCustomerPractice(practice.id, {
+    ...values,
+    agenzia_id: null,
+  });
+  await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
+    campo: "ricerca_indirizzo",
+  });
+  await recordCustomerEvent(practice.id, "posizione_ricerca_salvata", {
+    indirizzo: values.ricerca_indirizzo,
+    origine: selectionMode,
+  });
+  return finishAction(token, "agency_location", {
     ...navigation,
-    useAgencyFallback,
+    useAgencyFallback: values.ricerca_lat === null,
   });
 }
 
@@ -290,7 +316,7 @@ export async function saveCoownershipAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "cointestata",
   });
-  finishAction(token, "coownership", {
+  return finishAction(token, "coownership", {
     ...navigation,
     isCoOwned: value === "yes",
   });
@@ -302,7 +328,7 @@ export async function acknowledgeCoownershipNoticeAction(formData: FormData) {
     "coownership_notice",
   );
   await recordCustomerEventOnce(practice.id, "cointestatari_avviso_visto");
-  finishAction(token, "coownership_notice", navigation);
+  return finishAction(token, "coownership_notice", navigation);
 }
 
 export async function saveKeysAction(formData: FormData) {
@@ -316,7 +342,7 @@ export async function saveKeysAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "due_chiavi",
   });
-  finishAction(token, "keys", navigation);
+  return finishAction(token, "keys", navigation);
 }
 
 export async function saveAgencyAction(formData: FormData) {
@@ -325,17 +351,21 @@ export async function saveAgencyAction(formData: FormData) {
     "agency",
   );
   const agencyId = formData.get("agency_id");
-  if (typeof agencyId !== "string" || !practice.cap) {
+  if (
+    typeof agencyId !== "string" ||
+    practice.ricerca_lat === null ||
+    practice.ricerca_lng === null
+  ) {
     invalidAction(token, "agency");
   }
 
-  const result = await findNearbyAgencies(practice.id, practice.cap);
+  const result = await findNearbyAgencies(practice.id, {
+    lat: practice.ricerca_lat,
+    lng: practice.ricerca_lng,
+  });
   if (!result.ok) {
-    if (result.reason === "not_found") {
-      invalidAction(token, "postal_code", "postal_not_found");
-    }
-    await recordCustomerEvent(practice.id, "geocoding_fallito", {
-      cap: practice.cap,
+    await recordCustomerEvent(practice.id, "ricerca_agenzie_fallita", {
+      indirizzo: practice.ricerca_indirizzo,
       errore: result.error,
     });
     revalidatePath(`/p/${token}`);
@@ -353,7 +383,7 @@ export async function saveAgencyAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step3_appuntamento",
   });
-  finishAction(token, "agency", navigation);
+  return finishAction(token, "agency", navigation);
 }
 
 export async function continueWithoutAgencyAction(formData: FormData) {
@@ -368,7 +398,7 @@ export async function continueWithoutAgencyAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step3_appuntamento",
   });
-  finishAction(token, "agency_fallback", navigation);
+  return finishAction(token, "agency_fallback", navigation);
 }
 
 export async function saveOwnerAvailabilityAction(formData: FormData) {
@@ -388,7 +418,7 @@ export async function saveOwnerAvailabilityAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "conosce_orari_proprietario",
   });
-  finishAction(token, "owner_availability", {
+  return finishAction(token, "owner_availability", {
     ...navigation,
     knowsOwnerAvailability: value === "yes",
   });
@@ -403,7 +433,7 @@ export async function acknowledgeAvailabilityNoticeAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step4_ritiro",
   });
-  finishAction(token, "availability_notice", navigation);
+  return finishAction(token, "availability_notice", navigation);
 }
 
 export async function saveAppointmentPreferenceAction(formData: FormData) {
@@ -433,7 +463,7 @@ export async function saveAppointmentPreferenceAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "step4_ritiro",
   });
-  finishAction(token, "appointment", navigation);
+  return finishAction(token, "appointment", navigation);
 }
 
 export async function savePickupLocationAction(formData: FormData) {
@@ -448,19 +478,78 @@ export async function savePickupLocationAction(formData: FormData) {
   ) {
     invalidAction(token, "pickup_location");
   }
-  await updateCustomerPractice(practice.id, { ubicazione_auto: location });
+  const locationChanged = practice.ubicazione_auto !== location;
+  await updateCustomerPractice(practice.id, {
+    ubicazione_auto: location,
+    ...(locationChanged
+      ? {
+          indirizzo_ritiro: null,
+          ritiro_nome_attivita: null,
+          ritiro_place_id: null,
+          ritiro_lat: null,
+          ritiro_lng: null,
+        }
+      : {}),
+  });
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "ubicazione_auto",
   });
-  finishAction(token, "pickup_location", navigation);
+  return finishAction(token, "pickup_location", navigation);
 }
 
 export async function savePickupAddressAction(formData: FormData) {
-  return saveTextField(
+  const { token, practice, navigation } = await getActionContext(
     formData,
     "pickup_address",
-    "indirizzo_ritiro",
   );
+  if (!practice.ubicazione_auto) invalidAction(token, "pickup_location");
+
+  const selectionMode = formData.get("selection_mode");
+  let values: {
+    indirizzo_ritiro: string;
+    ritiro_nome_attivita: string | null;
+    ritiro_place_id: string | null;
+    ritiro_lat: number | null;
+    ritiro_lng: number | null;
+  };
+  if (selectionMode === "place") {
+    const proof = formData.get("place_proof");
+    const place =
+      typeof proof === "string"
+        ? verifyPlaceSelectionProof(proof, practice.id)
+        : null;
+    if (!place) invalidAction(token, "pickup_address");
+    values = {
+      indirizzo_ritiro: place.formattedAddress,
+      ritiro_nome_attivita:
+        practice.ubicazione_auto === "casa"
+          ? null
+          : place.displayName.trim() || null,
+      ritiro_place_id: place.placeId,
+      ritiro_lat: place.lat,
+      ritiro_lng: place.lng,
+    };
+  } else if (selectionMode === "manual") {
+    const manualAddress = formData.get("manual_address");
+    if (typeof manualAddress !== "string" || !manualAddress.trim()) {
+      invalidAction(token, "pickup_address");
+    }
+    values = {
+      indirizzo_ritiro: manualAddress.trim(),
+      ritiro_nome_attivita: null,
+      ritiro_place_id: null,
+      ritiro_lat: null,
+      ritiro_lng: null,
+    };
+  } else {
+    invalidAction(token, "pickup_address");
+  }
+
+  await updateCustomerPractice(practice.id, values);
+  await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
+    campo: "indirizzo_ritiro",
+  });
+  return finishAction(token, "pickup_address", navigation);
 }
 
 export async function savePickupPhoneAction(formData: FormData) {
@@ -483,5 +572,5 @@ export async function savePickupPhoneAction(formData: FormData) {
   await recordCustomerEvent(practice.id, "stato_aggiornato", {
     stato: "completata",
   });
-  finishAction(token, "pickup_phone", navigation);
+  return finishAction(token, "pickup_phone", navigation);
 }

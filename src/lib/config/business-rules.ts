@@ -23,7 +23,7 @@ export const VERIFICATION_FIELDS = [
 export const ATTENTION_EVENT_TYPES = [
   "targa_contestata",
   "nessuna_agenzia_nel_raggio",
-  "geocoding_fallito",
+  "ricerca_agenzie_fallita",
   "external_service_error",
 ] as const;
 
@@ -57,8 +57,18 @@ export const BUSINESS_RULES = {
     activeRequiresPhone: true,
     placesBatchSize: 10,
   },
+  placesAutocomplete: {
+    minimumInputLength: 3,
+    debounceMs: 300,
+    maximumRequestsPerMinute: 30,
+    rateLimitWindowMs: 60_000,
+    maximumSuggestions: 5,
+    selectionProofMaxAgeMs: 30 * 60_000,
+    includedRegionCodes: ["it"],
+    addressPrimaryTypes: ["street_address", "premise", "subpremise"],
+    establishmentPredictionTypes: ["establishment", "car_repair", "storage"],
+  },
   validation: {
-    italianPostalCodePattern: /^\d{5}$/,
     phonePattern: /^\+?[\d\s().-]{7,20}$/,
     italianTaxCodePattern:
       /^[A-Z]{6}[0-9LMNPQRSTUV]{2}[ABCDEHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/i,
@@ -69,6 +79,15 @@ export const BUSINESS_RULES = {
 
 export function normalizeVehiclePlate(value: string) {
   return value.toUpperCase().replace(/[\s-]+/g, "");
+}
+
+export function matchesVehiclePlateConfirmation(
+  confirmation: string,
+  expectedPlate: string,
+) {
+  return (
+    normalizeVehiclePlate(confirmation) === normalizeVehiclePlate(expectedPlate)
+  );
 }
 
 export function normalizeVehicleName(value: string) {
@@ -84,6 +103,11 @@ export function normalizeVehicleName(value: string) {
 
 export function normalizeAgencyKeyPart(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function parseMoneyAmount(value: string) {
+  const parsed = Number(value.trim().replace(",", "."));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 export function normalizeUppercaseValue(value: string) {
@@ -148,10 +172,6 @@ export function isValidItalianTaxCode(value: string) {
   }
 
   return String.fromCharCode(65 + (checksum % 26)) === normalized[15];
-}
-
-export function isValidItalianPostalCode(value: string) {
-  return BUSINESS_RULES.validation.italianPostalCodePattern.test(value.trim());
 }
 
 export function isValidPhone(value: string) {

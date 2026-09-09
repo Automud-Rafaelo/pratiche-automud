@@ -2,6 +2,8 @@
 
 ## Scopo
 
+Questo sistema è un prototipo di test. L'obiettivo è che il flusso e la logica vengano integrati nel gestionale interno di Automud (Express + React + PostgreSQL). Di conseguenza: la logica di dominio (validazioni, regole, parser, calcoli) va mantenuta in moduli puri senza dipendenze dal framework, con test; le API esterne vanno isolate dietro interfacce sostituibili.
+
 Automud S.r.l. acquista auto incidentate da privati. Dopo che un commerciale ha concordato il prezzo, il cliente riceve via WhatsApp un link a una web app. Con il minimo intervento umano, il cliente completa i dati per il pagamento, sceglie l'agenzia per il passaggio di proprietà, indica una preferenza per l'appuntamento e fornisce i dati necessari al ritiro con carro attrezzi.
 
 Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
@@ -29,7 +31,7 @@ Il prodotto è un prototipo da testare con clienti reali. Le priorità sono:
 - TypeScript
 - Tailwind CSS
 - Supabase Postgres tramite `@supabase/supabase-js`
-- Google Maps Platform: Places API (New) e Geocoding API, esclusivamente lato server
+- Google Maps Platform: Places API (New), esclusivamente lato server
 - Deploy su Vercel
 
 ## Attori e responsabilità
@@ -86,8 +88,8 @@ Il cliente apre `/p/[token]` e vede targa, marca, modello e prezzo concordato. R
 
 Mostrare una domanda per schermata:
 
-1. nome;
-2. cognome;
+1. nome dell'intestatario del conto, con la domanda “Come si chiama l'intestatario del conto?” e la spiegazione “Il nome di chi riceverà il bonifico, come sull'IBAN”; se `is_proprietario = false`, aggiungere “Il conto deve essere intestato al proprietario dell'auto”;
+2. cognome dell'intestatario del conto, con la domanda “E il cognome?” e la spiegazione “Sempre dell'intestatario del conto”;
 3. codice fiscale, con validazione del formato italiano a 16 caratteri e del carattere di controllo calcolato con la somma dei valori delle posizioni dispari e pari modulo 26;
 4. IBAN, con lunghezza specifica per paese e checksum mod-97; se chi compila non è il proprietario, spiegare che il conto deve essere intestato al proprietario;
 5. conferma della targa mostrata dall'applicazione.
@@ -100,15 +102,17 @@ La targa viene validata quando l'operatore crea la pratica. Normalizzarla in mai
 
 Chiedere:
 
-1. CAP;
+1. la posizione dalla quale cercare un'agenzia;
 2. se l'auto è cointestata; in caso affermativo avvisare che tutti i cointestatari devono essere presenti in agenzia;
 3. se sono disponibili due chiavi.
 
-Geocodificare il CAP passando prima da `cap_coordinate`. Mostrare fino a quattro agenzie attive entro 25 km, ordinate per distanza e senza preferenze ulteriori. Per ogni agenzia mostrare nome, indirizzo, distanza e telefono. La distanza si calcola localmente con Haversine.
+La domanda sulla posizione usa il titolo “Da quale posizione vuoi che troviamo un'agenzia?” e il sottotitolo “Ci serve per trovare l'agenzia più comoda per te”. Mostrare suggerimenti Places limitati all'Italia dopo almeno tre caratteri e con debounce di 300 ms. Quando il cliente seleziona un suggerimento, mostrare l'indirizzo completo e chiedere conferma con “Sì, è questo” o “Cambia”. Salvare indirizzo formattato, place ID e coordinate nei campi `ricerca_*`.
+
+Dopo la conferma, mostrare fino a quattro agenzie attive entro 25 km dalle coordinate scelte, ordinate per distanza e senza preferenze ulteriori. Per ogni agenzia mostrare nome, indirizzo, distanza e telefono. La distanza si calcola localmente con Haversine.
 
 Se non esistono agenzie entro il raggio configurato, mostrare comunque le quattro agenzie attive più vicine, rendere evidente la distanza, registrare l'evento `nessuna_agenzia_nel_raggio` e mostrare sopra le card: “Non abbiamo agenzie entro 25 km da te. Queste sono le più vicine: se sono troppo lontane, scrivici su WhatsApp e ne cerchiamo una insieme.” Il valore del raggio nel testo proviene da `business-rules.ts`.
 
-Se Google Geocoding restituisce `ZERO_RESULTS` o non fornisce coordinate, restare sulla schermata CAP con l'errore “Non troviamo questo CAP, controlla e riprova” e non registrare `geocoding_fallito`. Soltanto se il servizio non è disponibile per chiave, quota, rete o altro errore operativo mostrare la schermata rassicurante, proseguire senza `agenzia_id` e registrare `geocoding_fallito` con CAP e causa. Il pannello deve rendere evidente questo evento.
+Se Places non è disponibile, mostrare il fallback manuale e creare un avviso operatore con la causa. Una posizione inserita manualmente non possiede coordinate: mostrare la schermata rassicurante, proseguire senza `agenzia_id` e registrare `ricerca_agenzie_fallita` con indirizzo e causa. Il pannello deve rendere evidente questo evento.
 
 ### Step 3 — Preferenza appuntamento
 
@@ -126,7 +130,9 @@ Regole del calendario, calcolate lato server nel fuso `Europe/Rome`:
 
 ### Step 4 — Ritiro
 
-Chiedere, una schermata alla volta, dove si trova l'auto (`casa`, `deposito` o `carrozzeria`), l'indirizzo preciso e il telefono di contatto del carro attrezzi.
+Chiedere, una schermata alla volta, dove si trova l'auto (`casa`, `deposito` o `carrozzeria`), il luogo preciso e il telefono di contatto del carro attrezzi.
+
+Se l'auto è a casa, cercare via e numero civico con l'autocomplete indirizzi e chiedere conferma dell'indirizzo completo. Se è in deposito o carrozzeria, chiedere rispettivamente “Come si chiama il deposito?” o “Come si chiama la carrozzeria?”, con il sottotitolo “Scrivi il nome o la via, poi scegli dalla lista”, e usare l'autocomplete per attività commerciali. Alla selezione mostrare nome e indirizzo e salvarli insieme a place ID e coordinate. Il link “Non la trovo, scrivo l'indirizzo a mano” consente sempre il fallback al campo libero per deposito e carrozzeria. Se Places non è disponibile, il fallback manuale viene mostrato anche per l'indirizzo di casa e viene creato un avviso operatore con la causa.
 
 ### Completamento
 
@@ -183,7 +189,7 @@ Form con la sola password. Alla riuscita crea il cookie di sessione e reindirizz
 
 ### `/admin`
 
-Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome del cliente se presenti, stato, data di creazione e tre indicatori: verifiche completate, appuntamento confermato ed eventi da attenzionare (`targa_contestata`, `nessuna_agenzia_nel_raggio`, `geocoding_fallito` o errori dei servizi esterni). Gli errori esterni non risolti sono mostrati con la causa in cima alla pagina. Include il filtro “Da verificare”, definito come pratiche `completata` con `verifiche_completate_at` nullo, e il bottone “Nuova pratica”.
+Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome del cliente se presenti, stato, data di creazione e tre indicatori: verifiche completate, appuntamento confermato ed eventi da attenzionare (`targa_contestata`, `nessuna_agenzia_nel_raggio`, `ricerca_agenzie_fallita` o errori dei servizi esterni). Gli errori esterni non risolti sono mostrati con la causa in cima alla pagina. Include il filtro “Da verificare”, definito come pratiche `completata` con `verifiche_completate_at` nullo, e il bottone “Nuova pratica”.
 
 ### `/admin/pratiche/nuova`
 
@@ -194,11 +200,15 @@ Form con `tipo_pratica`, `prezzo_concordato`, `targa`, `marca` e `modello`. Norm
 Mostra:
 
 - riepilogo dei dati operatore e link cliente;
+- prezzo concordato modificabile con un evento `prezzo_modificato` contenente `{ da, a }` per ogni variazione;
 - dati cliente in sola lettura, raggruppati per step, usando “—” per i valori mancanti;
+- per il ritiro, nome dell'attività se presente, indirizzo e link “Apri in Google Maps” quando sono disponibili le coordinate;
 - cinque verifiche a tre stati con etichette italiane e il bottone “Verifiche completate”;
 - preferenza del cliente, agenzia scelta con telefono ed email, data e fascia dell'appuntamento confermato modificabili;
 - note operatore modificabili;
 - log eventi in ordine cronologico inverso.
+- tabella “Tempo per schermata” con ogni completamento, incluse le ripetizioni dovute alla navigazione indietro, durata in secondi e totale.
+- eliminazione definitiva della pratica dopo conferma tramite digitazione della targa; tutte le righe collegate vengono cancellate a cascata e il token cliente non è più valido.
 
 Ogni salvataggio dell'operatore genera un evento.
 
@@ -221,10 +231,11 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 ## Google Maps Platform
 
 - Usare `GOOGLE_MAPS_API_KEY` solo in route handler o server action.
+- L'autocomplete cliente passa esclusivamente dai proxy server `POST /api/places/suggest` e `POST /api/places/resolve`, accessibili soltanto con un token pratica valido e limitati complessivamente a 30 richieste al minuto per pratica.
+- Ogni ricerca autocomplete usa un session token UUID generato dal server, riutilizzato durante la digitazione e passato a Place Details (New) alla selezione per chiudere la sessione.
+- Place Details (New) richiede soltanto `id`, `displayName`, `formattedAddress` e `location` tramite field mask.
 - Usare Places API (New), Text Search, soltanto durante l'import delle agenzie.
-- Usare Geocoding API soltanto per ottenere le coordinate del CAP inserito dal cliente.
-- Consultare sempre `cap_coordinate` prima del geocoding. Chiedere un CAP a Google al massimo una volta e poi usare la cache.
-- Calcolare la distanza agenzia–CAP localmente con Haversine.
+- Calcolare la distanza tra le agenzie e le coordinate della posizione confermata localmente con Haversine.
 - Gli orari ottenuti da Places sono salvati in `agenzie.orari`, ma non sono mostrati al cliente nella v1.
 
 ## Modello dati Supabase
@@ -239,7 +250,7 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 - `prezzo_concordato`: numerico, inserito dall'operatore.
 - `targa`, `marca`, `modello`: testo, inserito dall'operatore; il cliente vede i dati e conferma o contesta la targa.
 - `targa_cliente`: testo nullable, compilato soltanto quando il cliente contesta la targa dell'operatore.
-- Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `cap`, `cointestata`, `due_chiavi`, `agenzia_id`, `preferenza_data`, `preferenza_fascia`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `telefono_ritiro`.
+- Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `ricerca_indirizzo`, `ricerca_place_id`, `ricerca_lat`, `ricerca_lng`, `cointestata`, `due_chiavi`, `agenzia_id`, `preferenza_data`, `preferenza_fascia`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `ritiro_nome_attivita`, `ritiro_place_id`, `ritiro_lat`, `ritiro_lng`, `telefono_ritiro`.
 - Verifiche nullable con semantica anomalia/ok/non verificato: `check_intestatario_non_corrisponde`, `check_cdp_cartaceo`, `check_revisione_scaduta`, `check_km_scalati`, `check_fermo_amministrativo`.
 - Campi operatore nullable: `appuntamento_confermato_data`, `appuntamento_confermato_fascia`, `verifiche_completate_at`, `note_operatore`.
 
@@ -257,19 +268,21 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 - `import_status`: `pending`, `ok` oppure `not_found`.
 - `import_error`: ultima causa di errore Places, nullable e cancellata dopo un esito conclusivo.
 
-### `cap_coordinate`
-
-Cache del geocoding: `cap` è la chiave primaria; `lat` e `lng` sono numerici; `created_at` è il timestamp di creazione.
-
 ### `eventi`
 
 Log di debug e amministrazione: `id`, `pratica_id`, `created_at`, `tipo` e `dettaglio` JSONB. Gli eventi vengono eliminati a cascata se viene eliminata la pratica.
 
-Eventi da evidenziare nella lista admin: `targa_contestata`, `nessuna_agenzia_nel_raggio`, `geocoding_fallito` ed errori dei servizi esterni.
+Quando il server serve una schermata cliente registra `schermata_visualizzata`. Dopo ogni salvataggio registra `schermata_completata` con `{ schermata, durata_ms }`, calcolando la durata dall'ultima visualizzazione della stessa schermata. Le schermate ripetute producono righe distinte. Il log admin mostra data e ora fino ai secondi e una tabella riepiloga le singole durate e il totale.
+
+Eventi da evidenziare nella lista admin: `targa_contestata`, `nessuna_agenzia_nel_raggio`, `ricerca_agenzie_fallita` ed errori dei servizi esterni.
 
 ### `operator_alerts`
 
-Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_at`, `source`, `message`, `context` e `resolved_at`. Sono visibili in `/admin` e possono essere contrassegnati come risolti.
+Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_at`, `pratica_id` nullable con cancellazione a cascata, `source`, `message`, `context` e `resolved_at`. Sono visibili in `/admin` e possono essere contrassegnati come risolti.
+
+### `place_autocomplete_requests`
+
+Prenotazioni del rate limit del proxy Places: `id`, `pratica_id` con cancellazione a cascata e `requested_at`. Non sono accessibili pubblicamente.
 
 ## Regole di business centralizzate
 
@@ -282,8 +295,9 @@ Messaggi operativi generati dai fallimenti dei servizi esterni: `id`, `created_a
 - raggio di 25 km, massimo quattro agenzie e fallback alle quattro più vicine;
 - calendario a tre giorni, esclusione domenica, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
 - durata e rate limit della sessione admin;
+- autocomplete Places: minimo tre caratteri, debounce 300 ms, massimo 30 richieste al minuto e massimo cinque suggerimenti;
 - normalizzazione della chiave di deduplicazione delle agenzie.
-- validazione completa di codice fiscale, IBAN, CAP e telefono, batch Places e formula di Haversine.
+- validazione completa di codice fiscale, IBAN e telefono, batch Places e formula di Haversine.
 
 ## Test manuale del flusso cliente
 
@@ -295,10 +309,16 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 4. chiudere il browser a metà percorso e riaprire lo stesso link, verificando la ripresa dal primo dato mancante;
 5. riaprire il link dopo il completamento e verificare che compaia sempre la schermata finale;
 6. completare il ramo proprietario “No” con orari del proprietario sconosciuti;
-7. inserire un CAP inesistente e verificare che si resti sulla domanda del CAP senza evento `geocoding_fallito`;
-8. usare un CAP senza agenzie nel raggio e verificare avviso, quattro opzioni più vicine ed evento `nessuna_agenzia_nel_raggio`;
-9. contestare la targa, inserire quella del libretto e verificare normalizzazione, avviso non bloccante ed evento con entrambe le targhe;
-10. controllare nel pannello admin che tutti i dati e gli eventi siano corretti e che le targhe operatore/cliente siano evidenti.
+7. cercare una posizione, selezionare un suggerimento, usare “Cambia”, selezionare di nuovo e confermare l'indirizzo, verificando che le agenzie siano ordinate per distanza;
+8. usare una posizione senza agenzie nel raggio e verificare avviso, quattro opzioni più vicine ed evento `nessuna_agenzia_nel_raggio`;
+9. scegliere il ritiro a casa, selezionare e confermare un indirizzo tramite autocomplete;
+10. scegliere il ritiro in carrozzeria, selezionare e confermare nome e indirizzo tramite autocomplete e verificare il link Google Maps nel pannello;
+11. verificare il fallback “Non la trovo, scrivo l'indirizzo a mano” e il fallback manuale quando Places non è disponibile;
+12. contestare la targa, inserire quella del libretto e verificare normalizzazione, avviso non bloccante ed evento con entrambe le targhe;
+13. modificare il prezzo dal pannello, riaprire la schermata iniziale cliente e verificare che mostri subito il valore corrente e l'evento `prezzo_modificato`;
+14. verificare nel pannello la tabella dei tempi, includendo le schermate ripetute tornando indietro, e i timestamp del log fino ai secondi;
+15. eliminare una pratica digitando la targa, quindi verificare che scompaiano dati collegati e avvisi e che il link cliente mostri la pagina di link non valido;
+16. controllare nel pannello admin che tutti i dati e gli eventi siano corretti e che le targhe operatore/cliente siano evidenti.
 
 ## Variabili d'ambiente
 
@@ -314,7 +334,7 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 
 ## Stato di avanzamento
 
-Ultimo aggiornamento: 5 settembre 2026.
+Ultimo aggiornamento: 9 settembre 2026.
 
 Completato:
 
@@ -322,7 +342,7 @@ Completato:
 - dipendenza `@supabase/supabase-js`;
 - specifica aggiornata al flusso cliente senza verifiche bloccanti;
 - regole di business centralizzate aggiornate;
-- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente e migration per `targa_cliente`;
+- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente, migration per `targa_cliente` e migration unica per Places, campi ritiro, rimozione CAP cliente e cancellazioni a cascata;
 - autenticazione admin con cookie firmato, scadenza a 12 ore e rate limit persistente per IP;
 - lista pratiche con filtro “Da verificare” e indicatori di attenzione;
 - creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
@@ -331,16 +351,21 @@ Completato:
 - accesso admin a Supabase esclusivamente server-side tramite service role;
 - flusso cliente completo `/p/[token]`, mobile-first, con una domanda per schermata, ripresa automatica e testi centralizzati;
 - navigazione cliente basata su un ordine fisso, con precedente/successiva applicabile e ripresa separata dal primo dato mancante;
-- validazione server e browser di codice fiscale, incluso il carattere di controllo, IBAN, CAP e telefono;
-- gestione distinta di CAP inesistente e indisponibilità del servizio Geocoding;
+- validazione server e browser di codice fiscale, incluso il carattere di controllo, IBAN e telefono;
+- ricerca posizione cliente tramite Places Autocomplete e conferma dell'indirizzo;
+- proxy Places autenticato dal token pratica, con session token server-side, field mask minima, limite persistente di 30 richieste al minuto e provider sostituibile;
+- autocomplete del ritiro per casa, deposito e carrozzeria, con conferma, dati strutturati e fallback manuale;
 - acquisizione della targa indicata dal cliente e visualizzazione delle due targhe nel pannello;
 - normalizzazione di marca e modello alla creazione della pratica;
-- geocoding CAP con cache, calcolo Haversine, fallback senza agenzia ed eventi di attenzione;
+- calcolo Haversine dalle coordinate scelte, fallback senza agenzia ed eventi di attenzione;
 - calendario server-side basato esclusivamente su `getAppointmentPreferenceOptions`;
 - pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
+- tempi di completamento delle singole schermate, incluse ripetizioni, riepilogati nel pannello;
+- modifica del prezzo concordato con storico evento e lettura dinamica nel flusso cliente;
+- eliminazione definitiva della pratica e dei dati collegati tramite conferma della targa;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
 - import Places in batch da dieci con riepilogo e causa degli errori;
-- test automatici per navigazione, validazioni, calendario e Haversine;
+- test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, provider Places e tempi schermata;
 - `.env.example` completo;
 - istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.
 

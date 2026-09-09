@@ -15,6 +15,23 @@ export const customerCopy = {
     title: "Qualcosa non ha funzionato.",
     description: "Riprova tra poco oppure scrivici su WhatsApp.",
   },
+  placesAutocomplete: {
+    addressLabel: "Indirizzo",
+    addressPlaceholder: "Inizia a scrivere l’indirizzo",
+    establishmentLabel: "Nome o indirizzo",
+    establishmentPlaceholder: "Inizia a scrivere il nome o la via",
+    loading: "Cerchiamo…",
+    noResults: "Nessun risultato, prova a scrivere in modo diverso.",
+    unavailable:
+      "Non riusciamo a cercare in questo momento, scrivi l’indirizzo a mano.",
+    manualLink: "Non la trovo, scrivo l’indirizzo a mano",
+    manualLabel: "Indirizzo completo",
+    manualPlaceholder: "Via, numero civico, città",
+    confirmAddress: "Confermi questo indirizzo?",
+    confirmEstablishment: "Confermi questo posto?",
+    confirm: "Sì, è questo",
+    change: "Cambia",
+  },
   welcome: {
     title: "Ciao! Organizziamo insieme il passaggio della tua auto",
     description:
@@ -34,14 +51,15 @@ export const customerCopy = {
       "Dovrà venire in agenzia con un documento di identità valido.",
   },
   firstName: {
-    title: "Come ti chiami?",
-    description: "Inserisci il nome del proprietario dell’auto.",
+    title: "Come si chiama l’intestatario del conto?",
+    description: "Il nome di chi riceverà il bonifico, come sull’IBAN.",
+    ownerDescription: "Il conto deve essere intestato al proprietario dell’auto.",
     label: "Nome",
     placeholder: "Nome",
   },
   lastName: {
-    title: "Qual è il tuo cognome?",
-    description: "Inserisci il cognome del proprietario dell’auto.",
+    title: "E il cognome?",
+    description: "Sempre dell’intestatario del conto.",
     label: "Cognome",
     placeholder: "Cognome",
   },
@@ -75,13 +93,9 @@ export const customerCopy = {
     warning:
       "Questa targa ha un formato diverso da quello moderno: puoi continuare comunque.",
   },
-  postalCode: {
-    title: "Qual è il tuo CAP?",
+  agencyLocation: {
+    title: "Da quale posizione vuoi che troviamo un’agenzia?",
     description: "Ci serve per trovare l’agenzia più comoda per te.",
-    label: "CAP",
-    placeholder: "00000",
-    error: "Inserisci un CAP di 5 cifre.",
-    notFoundError: "Non troviamo questo CAP, controlla e riprova.",
   },
   coownership: {
     title: "L’auto è intestata a più persone?",
@@ -102,7 +116,7 @@ export const customerCopy = {
   },
   agency: {
     title: "Scegli l’agenzia dove fare il passaggio",
-    description: "Ti mostriamo le opzioni più vicine al CAP che hai indicato.",
+    description: "Ti mostriamo le opzioni più vicine alla posizione che hai indicato.",
     distance: "km",
     noChoice: "Non ti va bene nessuna? Scrivici su WhatsApp",
     outsideRadius:
@@ -138,13 +152,18 @@ export const customerCopy = {
     bodyShop: "In una carrozzeria",
   },
   pickupAddress: {
-    title: "Qual è l’indirizzo esatto?",
-    descriptions: {
-      home: "Scrivi la via e il numero civico.",
-      business: "Scrivi il nome della struttura e l’indirizzo.",
+    home: {
+      title: "Qual è l’indirizzo esatto?",
+      description: "Scrivi la via e il numero civico.",
     },
-    label: "Indirizzo di ritiro",
-    placeholder: "Via e numero civico",
+    storage: {
+      title: "Come si chiama il deposito?",
+      description: "Scrivi il nome o la via, poi scegli dalla lista.",
+    },
+    bodyShop: {
+      title: "Come si chiama la carrozzeria?",
+      description: "Scrivi il nome o la via, poi scegli dalla lista.",
+    },
   },
   pickupPhone: {
     title: "A quale numero può chiamarti il carro attrezzi?",

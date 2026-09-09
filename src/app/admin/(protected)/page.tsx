@@ -12,19 +12,24 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { resolveOperatorAlertAction } from "./actions";
 
 type AdminPageProps = {
-  searchParams: Promise<{ filter?: string; service_error?: string }>;
+  searchParams: Promise<{
+    filter?: string;
+    service_error?: string;
+    notice?: string;
+  }>;
 };
 
 const attentionLabels: Record<string, string> = {
   targa_contestata: "Targa contestata",
   nessuna_agenzia_nel_raggio: `Agenzia oltre ${BUSINESS_RULES.nearbyAgencies.radiusKm} km`,
-  geocoding_fallito: "Geocoding fallito",
+  ricerca_agenzie_fallita: "Ricerca agenzie non disponibile",
   external_service_error: "Servizio esterno non disponibile",
 };
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   await requireAdminSession();
-  const { filter, service_error: actionServiceError } = await searchParams;
+  const { filter, service_error: actionServiceError, notice } =
+    await searchParams;
   const toVerifyOnly = filter === "to_verify";
   const supabase = createAdminSupabaseClient();
 
@@ -94,6 +99,11 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   return (
     <>
+      {notice === "practice_deleted" ? (
+        <p className="mb-4 rounded-md bg-green-50 p-3 text-sm text-green-900">
+          Pratica eliminata definitivamente.
+        </p>
+      ) : null}
       {serviceMessages.map((message) => (
         <p
           className="mb-4 rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-950"

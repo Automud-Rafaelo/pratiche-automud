@@ -39,6 +39,7 @@ Le migration in `supabase/migrations` vengono applicate in ordine:
 3. `20260904150000_admin_support.sql` aggiunge il rate limiting della login e consente le righe CSV prive di CAP;
 4. `20260904160000_customer_flow.sql` aggiunge gli errori import visibili e gli avvisi operatore per i servizi esterni;
 5. `20260905090000_customer_plate.sql` aggiunge la targa indicata dal cliente quando contesta quella dell'operatore.
+6. `20260909100000_places_and_practice_operations.sql` sostituisce il CAP cliente con le coordinate Places, aggiunge i dati strutturati del ritiro e rende eliminabili a cascata i dati collegati alla pratica.
 
 `npx supabase db push` applica soltanto le migration non ancora eseguite. Le tabelle hanno Row Level Security attiva e nessuna policy pubblica: il pannello usa la service role key esclusivamente lato server.
 
@@ -52,7 +53,7 @@ Nel progetto Google Cloud abilitare **Places API (New)** e limitare la chiave al
 
 1. Importare la repository GitHub in Vercel.
 2. In **Project Settings → Environment Variables**, aggiungere tutte le variabili elencate in `.env.example` per gli ambienti necessari. Impostare `NEXT_PUBLIC_APP_URL` sul dominio pubblico completo, per esempio `https://pratiche.example.it`.
-3. Impostare `NEXT_PUBLIC_WHATSAPP_NUMBER`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD` e `GOOGLE_MAPS_API_KEY`. La stessa chiave Google viene usata lato server per Places API (New) e Geocoding API.
+3. Impostare `NEXT_PUBLIC_WHATSAPP_NUMBER`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD` e `GOOGLE_MAPS_API_KEY`. La chiave Google viene usata soltanto lato server per Places API (New).
 4. Verificare che `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_MAPS_API_KEY` e `ADMIN_PASSWORD` non vengano mai esposte al browser.
 5. Applicare tutte le migration al progetto Supabase di destinazione.
 6. Eseguire il deploy dalla dashboard. I push successivi al branch collegato genereranno nuovi deploy automaticamente.

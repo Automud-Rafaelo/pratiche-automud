@@ -22,7 +22,10 @@ export type PracticeRow = {
   cognome: string | null;
   codice_fiscale: string | null;
   iban: string | null;
-  cap: string | null;
+  ricerca_indirizzo: string | null;
+  ricerca_place_id: string | null;
+  ricerca_lat: number | null;
+  ricerca_lng: number | null;
   cointestata: boolean | null;
   due_chiavi: boolean | null;
   agenzia_id: string | null;
@@ -31,6 +34,10 @@ export type PracticeRow = {
   conosce_orari_proprietario: boolean | null;
   ubicazione_auto: "casa" | "deposito" | "carrozzeria" | null;
   indirizzo_ritiro: string | null;
+  ritiro_nome_attivita: string | null;
+  ritiro_place_id: string | null;
+  ritiro_lat: number | null;
+  ritiro_lng: number | null;
   telefono_ritiro: string | null;
   check_intestatario_non_corrisponde: boolean | null;
   check_cdp_cartaceo: boolean | null;

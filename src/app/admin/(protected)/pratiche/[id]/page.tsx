@@ -15,12 +15,15 @@ import {
 } from "@/lib/admin/format";
 import type { AgencyRow, EventRow, PracticeRow } from "@/lib/admin/types";
 import { VERIFICATION_FIELDS } from "@/lib/config/business-rules";
+import { listScreenTimings } from "@/lib/customer/screen-timing";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 import {
   completeVerificationsAction,
+  deletePracticeAction,
   saveAppointmentAction,
   saveNotesAction,
+  savePriceAction,
   saveVerificationsAction,
 } from "./actions";
 
@@ -37,6 +40,9 @@ const noticeMessages: Record<string, string> = {
   appointment_saved: "Appuntamento salvato.",
   appointment_invalid: "Inserisci sia la data sia la fascia, oppure nessuna.",
   notes_saved: "Note salvate.",
+  price_saved: "Prezzo concordato salvato.",
+  price_invalid: "Inserisci un prezzo valido.",
+  delete_plate_mismatch: "La targa inserita non corrisponde.",
   service_error: "Operazione non riuscita.",
 };
 
@@ -52,7 +58,8 @@ const highlightedEventLabels: Record<string, string> = {
   targa_contestata: "Il cliente ha contestato la targa.",
   nessuna_agenzia_nel_raggio:
     "Non sono state trovate agenzie entro il raggio configurato.",
-  geocoding_fallito: "Non è stato possibile geocodificare il CAP.",
+  ricerca_agenzie_fallita:
+    "Non è stato possibile cercare le agenzie dalla posizione scelta.",
 };
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -135,8 +142,19 @@ export default async function PracticeDetailPage({
   }
 
   const customerLink = buildCustomerLink(practice.token);
+  const pickupMapsUrl =
+    practice.ritiro_lat !== null && practice.ritiro_lng !== null
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          `${practice.ritiro_lat},${practice.ritiro_lng}`,
+        )}`
+      : null;
   const highlightedEvents = events.filter(
     (event) => highlightedEventLabels[event.tipo],
+  );
+  const screenTimings = listScreenTimings(events);
+  const totalScreenTimeMs = screenTimings.reduce(
+    (total, timing) => total + timing.durationMs,
+    0,
   );
 
   return (
@@ -203,7 +221,28 @@ export default async function PracticeDetailPage({
           {practice.tipo_pratica === "atto_demo" ? "Atto demo" : "Dini"}
         </Field>
         <Field label="Prezzo concordato">
-          {formatMoney(practice.prezzo_concordato)}
+          <form action={savePriceAction} className="flex flex-wrap gap-2">
+            <input name="practice_id" type="hidden" value={practice.id} />
+            <input
+              className="w-36 rounded-md border border-slate-300 px-3 py-2"
+              defaultValue={practice.prezzo_concordato}
+              inputMode="decimal"
+              min="0"
+              name="prezzo_concordato"
+              required
+              step="0.01"
+              type="number"
+            />
+            <button
+              className="rounded-md bg-slate-900 px-3 py-2 font-medium text-white"
+              type="submit"
+            >
+              Salva
+            </button>
+          </form>
+          <span className="mt-1 block text-xs text-slate-500">
+            Valore attuale: {formatMoney(practice.prezzo_concordato)}
+          </span>
         </Field>
         <Field label="Stato">{formatStatus(practice.status)}</Field>
         <Field label="Targa operatore">{practice.targa}</Field>
@@ -226,14 +265,20 @@ export default async function PracticeDetailPage({
 
       <ReadOnlySection title="Step 1 · Dati cliente">
         <Field label="Proprietario">{formatBoolean(practice.is_proprietario)}</Field>
-        <Field label="Nome">{displayValue(practice.nome)}</Field>
-        <Field label="Cognome">{displayValue(practice.cognome)}</Field>
+        <Field label="Nome intestatario conto">
+          {displayValue(practice.nome)}
+        </Field>
+        <Field label="Cognome intestatario conto">
+          {displayValue(practice.cognome)}
+        </Field>
         <Field label="Codice fiscale">{displayValue(practice.codice_fiscale)}</Field>
         <Field label="IBAN">{displayValue(practice.iban)}</Field>
       </ReadOnlySection>
 
       <ReadOnlySection title="Step 2 · Agenzia">
-        <Field label="CAP">{displayValue(practice.cap)}</Field>
+        <Field label="Posizione di ricerca">
+          {displayValue(practice.ricerca_indirizzo)}
+        </Field>
         <Field label="Auto cointestata">{formatBoolean(practice.cointestata)}</Field>
         <Field label="Due chiavi">{formatBoolean(practice.due_chiavi)}</Field>
         <Field label="Agenzia scelta">{agency?.nome ?? "—"}</Field>
@@ -254,8 +299,25 @@ export default async function PracticeDetailPage({
 
       <ReadOnlySection title="Step 4 · Ritiro">
         <Field label="Ubicazione auto">{practice.ubicazione_auto ?? "—"}</Field>
+        <Field label="Nome attività">
+          {displayValue(practice.ritiro_nome_attivita)}
+        </Field>
         <Field label="Indirizzo ritiro">
           {displayValue(practice.indirizzo_ritiro)}
+        </Field>
+        <Field label="Posizione">
+          {pickupMapsUrl ? (
+            <a
+              className="text-blue-700 underline"
+              href={pickupMapsUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Apri in Google Maps
+            </a>
+          ) : (
+            "—"
+          )}
         </Field>
         <Field label="Telefono ritiro">
           {displayValue(practice.telefono_ritiro)}
@@ -367,6 +429,45 @@ export default async function PracticeDetailPage({
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-5">
+        <h2 className="text-lg font-semibold">Tempo per schermata</h2>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="text-left">
+              <tr>
+                <th className="py-2 pr-4">Schermata</th>
+                <th className="py-2 text-right">Durata</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {screenTimings.map((timing) => (
+                <tr key={timing.eventId}>
+                  <td className="py-2 pr-4">{timing.screen}</td>
+                  <td className="py-2 text-right">
+                    {(timing.durationMs / 1000).toFixed(1)} s
+                  </td>
+                </tr>
+              ))}
+              {screenTimings.length === 0 ? (
+                <tr>
+                  <td className="py-5 text-slate-500" colSpan={2}>
+                    Nessun tempo registrato.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+            <tfoot className="border-t border-slate-300 font-semibold">
+              <tr>
+                <td className="py-2 pr-4">Totale</td>
+                <td className="py-2 text-right">
+                  {(totalScreenTimeMs / 1000).toFixed(1)} s
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-5">
         <h2 className="text-lg font-semibold">Log eventi</h2>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -401,6 +502,41 @@ export default async function PracticeDetailPage({
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-red-300 bg-red-50 p-5">
+        <h2 className="text-lg font-semibold text-red-950">Elimina pratica</h2>
+        <p className="mt-2 text-sm text-red-900">
+          L’eliminazione è definitiva e cancella anche eventi e avvisi collegati.
+        </p>
+        <details className="mt-4">
+          <summary className="inline-block cursor-pointer rounded-md bg-red-700 px-4 py-2 font-medium text-white">
+            Elimina pratica
+          </summary>
+          <form action={deletePracticeAction} className="mt-4 max-w-md">
+            <input name="practice_id" type="hidden" value={practice.id} />
+            <label
+              className="block text-sm font-medium"
+              htmlFor="plate_confirmation"
+            >
+              Digita {practice.targa} per confermare
+            </label>
+            <input
+              autoCapitalize="characters"
+              autoComplete="off"
+              className="mt-1 block w-full rounded-md border border-red-300 px-3 py-2"
+              id="plate_confirmation"
+              name="plate_confirmation"
+              required
+            />
+            <button
+              className="mt-3 rounded-md bg-red-700 px-4 py-2 font-medium text-white"
+              type="submit"
+            >
+              Elimina definitivamente
+            </button>
+          </form>
+        </details>
       </section>
     </div>
   );
