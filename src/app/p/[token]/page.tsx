@@ -378,7 +378,11 @@ export default async function CustomerPage({
   }
 
   if (screen === "first_name") {
-    return <TextScreenPage {...frameProps} {...customerCopy.firstName} action={saveFirstNameAction} autoCapitalize="words" autoComplete="given-name" defaultValue={practice.nome ?? ""} errorMessage={errorMessage} screen={screen} token={token} />;
+    const description =
+      practice.is_proprietario === false
+        ? `${customerCopy.firstName.description} ${customerCopy.firstName.ownerDescription}`
+        : customerCopy.firstName.description;
+    return <TextScreenPage {...frameProps} {...customerCopy.firstName} action={saveFirstNameAction} autoCapitalize="words" autoComplete="given-name" defaultValue={practice.nome ?? ""} description={description} errorMessage={errorMessage} screen={screen} token={token} />;
   }
   if (screen === "last_name") {
     return <TextScreenPage {...frameProps} {...customerCopy.lastName} action={saveLastNameAction} autoCapitalize="words" autoComplete="family-name" defaultValue={practice.cognome ?? ""} errorMessage={errorMessage} screen={screen} token={token} />;

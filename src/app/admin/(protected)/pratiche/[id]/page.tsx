@@ -265,8 +265,12 @@ export default async function PracticeDetailPage({
 
       <ReadOnlySection title="Step 1 · Dati cliente">
         <Field label="Proprietario">{formatBoolean(practice.is_proprietario)}</Field>
-        <Field label="Nome">{displayValue(practice.nome)}</Field>
-        <Field label="Cognome">{displayValue(practice.cognome)}</Field>
+        <Field label="Nome intestatario conto">
+          {displayValue(practice.nome)}
+        </Field>
+        <Field label="Cognome intestatario conto">
+          {displayValue(practice.cognome)}
+        </Field>
         <Field label="Codice fiscale">{displayValue(practice.codice_fiscale)}</Field>
         <Field label="IBAN">{displayValue(practice.iban)}</Field>
       </ReadOnlySection>

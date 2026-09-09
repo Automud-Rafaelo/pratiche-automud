@@ -88,8 +88,8 @@ Il cliente apre `/p/[token]` e vede targa, marca, modello e prezzo concordato. R
 
 Mostrare una domanda per schermata:
 
-1. nome;
-2. cognome;
+1. nome dell'intestatario del conto, con la domanda “Come si chiama l'intestatario del conto?” e la spiegazione “Il nome di chi riceverà il bonifico, come sull'IBAN”; se `is_proprietario = false`, aggiungere “Il conto deve essere intestato al proprietario dell'auto”;
+2. cognome dell'intestatario del conto, con la domanda “E il cognome?” e la spiegazione “Sempre dell'intestatario del conto”;
 3. codice fiscale, con validazione del formato italiano a 16 caratteri e del carattere di controllo calcolato con la somma dei valori delle posizioni dispari e pari modulo 26;
 4. IBAN, con lunghezza specifica per paese e checksum mod-97; se chi compila non è il proprietario, spiegare che il conto deve essere intestato al proprietario;
 5. conferma della targa mostrata dall'applicazione.
