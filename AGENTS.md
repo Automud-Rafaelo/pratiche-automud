@@ -108,7 +108,9 @@ Chiedere:
 
 La domanda sulla posizione usa il titolo “Da quale posizione vuoi che troviamo un'agenzia?” e il sottotitolo “Ci serve per trovare l'agenzia più comoda per te”. Mostrare suggerimenti Places limitati all'Italia dopo almeno tre caratteri e con debounce di 300 ms. Quando il cliente seleziona un suggerimento, mostrare l'indirizzo completo e chiedere conferma con “Sì, è questo” o “Cambia”. Salvare indirizzo formattato, place ID e coordinate nei campi `ricerca_*`.
 
-Dopo la conferma, mostrare fino a quattro agenzie attive entro 25 km dalle coordinate scelte, ordinate per distanza e senza preferenze ulteriori. Per ogni agenzia mostrare nome, indirizzo, distanza e telefono. La distanza si calcola localmente con Haversine.
+Dopo la conferma, calcolare Haversine su tutte le agenzie attive con coordinate e prendere le otto più vicine. Inviare una sola richiesta `computeRouteMatrix` a Routes API con origine nella posizione scelta, otto destinazioni, `DRIVE`, `TRAFFIC_UNAWARE` e field mask `distanceMeters,duration`; ordinare per durata e mostrare le prime quattro con nome, indirizzo, telefono e testo come “18 min in auto · 14 km”.
+
+Se Routes non risponde, ordinare le stesse candidate con Haversine, mostrare le prime quattro con “circa 14 km” e creare un avviso operatore con la causa. Il controllo del raggio di 25 km resta sempre basato su Haversine. Quando il cliente sceglie, salvare distanza stradale e durata; nel fallback salvare la distanza Haversine e lasciare nulla la durata.
 
 Se non esistono agenzie entro il raggio configurato, mostrare comunque le quattro agenzie attive più vicine, rendere evidente la distanza, registrare l'evento `nessuna_agenzia_nel_raggio` e mostrare sopra le card: “Non abbiamo agenzie entro 25 km da te. Queste sono le più vicine: se sono troppo lontane, scrivici su WhatsApp e ne cerchiamo una insieme.” Il valore del raggio nel testo proviene da `business-rules.ts`.
 
@@ -210,6 +212,7 @@ Mostra:
 - per il ritiro, nome dell'attività se presente, indirizzo e link “Apri in Google Maps” quando sono disponibili le coordinate;
 - cinque verifiche a tre stati con etichette italiane e il bottone “Verifiche completate”;
 - preferenza del cliente, agenzia scelta con telefono ed email, data e fascia dell'appuntamento confermato modificabili;
+- distanza e durata in auto salvate al momento della scelta, quando disponibili;
 - blocco degli orari dell'agenzia relativo alla data e fascia preferite dal cliente;
 - note operatore modificabili;
 - log eventi in ordine cronologico inverso.
@@ -245,7 +248,8 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 - Il refresh degli orari usa Place Details (New) con field mask `regularOpeningHours,businessStatus`, un timeout di cinque secondi e una cache applicativa di sette giorni.
 - Usare Places API (New), Text Search, soltanto durante l'import delle agenzie.
 - Gli orari usano Place Details (New), richiesto come integrazione Place Details Pro, con la field mask minima indicata sopra.
-- Calcolare la distanza tra le agenzie e le coordinate della posizione confermata localmente con Haversine.
+- Routes API usa una sola matrice per un'origine e fino a otto destinazioni, con `DRIVE`, `TRAFFIC_UNAWARE` e field mask `distanceMeters,duration`. Deve essere abilitata e inclusa nelle restrizioni della stessa chiave Google.
+- Haversine resta il calcolo locale per preselezione, avviso del raggio e fallback se Routes non è disponibile.
 
 ## Modello dati Supabase
 
@@ -259,7 +263,7 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 - `prezzo_concordato`: numerico, inserito dall'operatore.
 - `targa`, `marca`, `modello`: testo, inserito dall'operatore; il cliente vede i dati e conferma o contesta la targa.
 - `targa_cliente`: testo nullable, compilato soltanto quando il cliente contesta la targa dell'operatore.
-- Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `ricerca_indirizzo`, `ricerca_place_id`, `ricerca_lat`, `ricerca_lng`, `cointestata`, `due_chiavi`, `agenzia_id`, `preferenza_data`, `preferenza_fascia`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `ritiro_nome_attivita`, `ritiro_place_id`, `ritiro_lat`, `ritiro_lng`, `telefono_ritiro`.
+- Campi cliente nullable: `is_proprietario`, `nome`, `cognome`, `codice_fiscale`, `iban`, `ricerca_indirizzo`, `ricerca_place_id`, `ricerca_lat`, `ricerca_lng`, `cointestata`, `due_chiavi`, `agenzia_id`, `agenzia_distanza_km`, `agenzia_durata_min`, `preferenza_data`, `preferenza_fascia`, `conosce_orari_proprietario`, `ubicazione_auto`, `indirizzo_ritiro`, `ritiro_nome_attivita`, `ritiro_place_id`, `ritiro_lat`, `ritiro_lng`, `telefono_ritiro`.
 - Verifiche nullable con semantica anomalia/ok/non verificato: `check_intestatario_non_corrisponde`, `check_cdp_cartaceo`, `check_revisione_scaduta`, `check_km_scalati`, `check_fermo_amministrativo`.
 - Campi operatore nullable: `appuntamento_confermato_data`, `appuntamento_confermato_fascia`, `verifiche_completate_at`, `note_operatore`.
 
@@ -304,11 +308,12 @@ Prenotazioni del rate limit del proxy Places: `id`, `pratica_id` con cancellazio
 - semantica e nomi delle verifiche;
 - normalizzazione e validazione non bloccante della targa;
 - normalizzazione di marca e modello con iniziale maiuscola per parola;
-- raggio di 25 km, massimo quattro agenzie e fallback alle quattro più vicine;
+- raggio Haversine di 25 km, otto candidate Routes, massimo quattro risultati e fallback Haversine;
 - calendario a tre giorni, esclusione domenica, sabato solo mattina, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
 - durata e rate limit della sessione admin;
 - autocomplete Places: minimo tre caratteri, debounce 300 ms, massimo 30 richieste al minuto e massimo cinque suggerimenti;
 - orari agenzia: TTL sette giorni, timeout cinque secondi, field mask Place Details e divisione delle fasce alle 13:00;
+- matrice Routes: numero di candidate, modalità di viaggio, preferenza, field mask, timeout e fallback Haversine;
 - normalizzazione della chiave di deduplicazione delle agenzie.
 - validazione completa di codice fiscale, IBAN e telefono, batch Places e formula di Haversine.
 
@@ -332,6 +337,12 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 14. verificare nel pannello la tabella dei tempi, includendo le schermate ripetute tornando indietro, e i timestamp del log fino ai secondi;
 15. eliminare una pratica digitando la targa, quindi verificare che scompaiano dati collegati e avvisi e che il link cliente mostri la pagina di link non valido;
 16. controllare nel pannello admin che tutti i dati e gli eventi siano corretti e che le targhe operatore/cliente siano evidenti.
+17. importare il nuovo CSV da 109 righe, rilanciare l'import e verificare che non compaiano doppioni, che le righe assenti vengano disattivate e che il report mostri create/aggiornate/disattivate/pending;
+18. verificare che un'agenzia con `delega = true` o con delega/istanza sconosciute non sia attivabile e non compaia al cliente;
+19. arrivare al calendario quando tra le opzioni c'è un sabato e verificare che sia disponibile soltanto la mattina;
+20. completare scegliendo una preferenza e verificare nella pagina finale e nel pannello gli orari dell'agenzia, la separazione alle 13:00 e la fascia preferita evidenziata;
+21. verificare che le card agenzia mostrino tempo in auto e distanza stradale e che il pannello salvi i valori dell'agenzia scelta;
+22. rendere Routes API temporaneamente indisponibile e verificare le card “circa … km”, l'ordinamento Haversine e l'avviso operatore con la causa.
 
 ## Variabili d'ambiente
 
@@ -375,12 +386,13 @@ Completato:
 - sabato limitato alla fascia mattina nel calendario, con test automatici;
 - pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
 - refresh e visualizzazione degli orari dell'agenzia nella pagina finale e nel pannello, con cache di sette giorni e fallback telefonico;
+- selezione agenzie tramite matrice Routes sulle otto candidate Haversine, con distanza/durata persistite e fallback locale segnalato agli operatori;
 - tempi di completamento delle singole schermate, incluse ripetizioni, riepilogati nel pannello;
 - modifica del prezzo concordato con storico evento e lettura dinamica nel flusso cliente;
 - eliminazione definitiva della pratica e dei dati collegati tramite conferma della targa;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
 - import Places in batch da venti con report create/aggiornate/disattivate/pending e causa degli errori;
-- test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, parser orari, provider Places e tempi schermata;
+- test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, parser orari, provider Places/Routes e tempi schermata;
 - `.env.example` completo;
 - istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.
 
@@ -391,6 +403,7 @@ Non ancora implementato:
 ## Domande aperte
 
 - La documentazione Google corrente classifica `regularOpeningHours` nella SKU Place Details Enterprise, non Pro: confermare che costi e restrizioni del progetto Google Cloud siano compatibili prima del test in produzione.
+- La field mask Routes richiesta contiene soltanto `distanceMeters,duration`; la documentazione Google raccomanda anche indici e stato per associare con certezza gli elementi di una risposta matrix in streaming. Verificare sul progetto reale che l'ordine della risposta coincida stabilmente con quello delle destinazioni.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

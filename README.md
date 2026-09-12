@@ -40,20 +40,23 @@ Le migration in `supabase/migrations` vengono applicate in ordine:
 4. `20260904160000_customer_flow.sql` aggiunge gli errori import visibili e gli avvisi operatore per i servizi esterni;
 5. `20260905090000_customer_plate.sql` aggiunge la targa indicata dal cliente quando contesta quella dell'operatore.
 6. `20260909100000_places_and_practice_operations.sql` sostituisce il CAP cliente con le coordinate Places, aggiunge i dati strutturati del ritiro e rende eliminabili a cascata i dati collegati alla pratica.
+7. `20260912100000_agency_data_hours_routes.sql` aggiunge i dati amministrativi delle agenzie, la nuova chiave email+CAP, il timestamp degli orari e distanza/durata dell'agenzia scelta.
 
 `npx supabase db push` applica soltanto le migration non ancora eseguite. Le tabelle hanno Row Level Security attiva e nessuna policy pubblica: il pannello usa la service role key esclusivamente lato server.
 
 ## Import delle agenzie
 
-Il pannello `/admin/import-agenzie` legge `data/agenzie.csv`. Le righe con coordinate vengono importate direttamente; per quelle senza coordinate usa Places API (New), Text Search, se `GOOGLE_MAPS_API_KEY` è configurata. Ogni pressione elabora al massimo dieci agenzie tramite Places. Gli errori, compresa un'API non abilitata o una chiave assente, restano visibili nella colonna dedicata. L'import è idempotente sulla coppia nome + CAP normalizzati e può essere rilanciato per riprendere le righe `pending`.
+Il pannello `/admin/import-agenzie` legge le 109 righe di `data/agenzie.csv`, riconcilia prima le righe esistenti tramite email+CAP (o nome+CAP come fallback), conserva le coordinate già presenti, disattiva le righe storiche assenti dal CSV e inserisce le nuove come `pending`. Le coordinate delle nuove righe arrivano da Places API (New), Text Search; i link brevi `share.google` non vengono usati. Ogni pressione elabora al massimo venti agenzie tramite Google, compreso il refresh degli orari assenti o più vecchi di sette giorni tramite Place Details (New). Gli errori, compresa un'API non abilitata o una chiave assente, restano visibili nella colonna dedicata e negli avvisi operatore.
 
-Nel progetto Google Cloud abilitare **Places API (New)** e limitare la chiave all'API e agli ambienti server autorizzati. La chiave non deve essere prefissata con `NEXT_PUBLIC_`.
+Dopo il deploy applicare prima la migration più recente, quindi premere “Importa” finché il report indica zero elementi `pending`.
+
+Nel progetto Google Cloud abilitare **Places API (New)** e **Routes API**. Includere entrambe nelle restrizioni API di `GOOGLE_MAPS_API_KEY` e limitare la chiave agli ambienti server autorizzati. Places serve per autocomplete, Text Search e Place Details degli orari; Routes serve per la matrice di distanza e durata in auto. La chiave non deve essere prefissata con `NEXT_PUBLIC_`.
 
 ## Configurazione e deploy su Vercel
 
 1. Importare la repository GitHub in Vercel.
 2. In **Project Settings → Environment Variables**, aggiungere tutte le variabili elencate in `.env.example` per gli ambienti necessari. Impostare `NEXT_PUBLIC_APP_URL` sul dominio pubblico completo, per esempio `https://pratiche.example.it`.
-3. Impostare `NEXT_PUBLIC_WHATSAPP_NUMBER`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD` e `GOOGLE_MAPS_API_KEY`. La chiave Google viene usata soltanto lato server per Places API (New).
+3. Impostare `NEXT_PUBLIC_WHATSAPP_NUMBER`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_PASSWORD` e `GOOGLE_MAPS_API_KEY`. La chiave Google viene usata soltanto lato server per Places API (New) e Routes API.
 4. Verificare che `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_MAPS_API_KEY` e `ADMIN_PASSWORD` non vengano mai esposte al browser.
 5. Applicare tutte le migration al progetto Supabase di destinazione.
 6. Eseguire il deploy dalla dashboard. I push successivi al branch collegato genereranno nuovi deploy automaticamente.

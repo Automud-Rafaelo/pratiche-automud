@@ -87,7 +87,7 @@ export default async function ImportAgenciesPage({
           </p>
           <p className="mt-1">
             Elaborate con Google Places {query.processed} di {query.pending_before}
-            {" "}agenzie in attesa.
+            {" "}agenzie da completare.
           </p>
           {query.pending_after !== "0"
             ? " Premi di nuovo Importa per continuare dopo aver risolto gli eventuali errori mostrati."
@@ -103,7 +103,7 @@ export default async function ImportAgenciesPage({
 
       {query.missing_key === "1" ? (
         <p className="mt-3 rounded-md bg-amber-50 p-4 text-sm text-amber-900">
-          Google Places: chiave assente. Le righe sono state inserite, ma quelle senza coordinate restano in attesa.
+          Google Places: chiave assente. Le righe sono state inserite, ma coordinate e orari da aggiornare restano in attesa.
         </p>
       ) : null}
 

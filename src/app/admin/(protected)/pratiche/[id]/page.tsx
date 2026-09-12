@@ -286,6 +286,16 @@ export default async function PracticeDetailPage({
         <Field label="Indirizzo agenzia">{agency?.indirizzo ?? "—"}</Field>
         <Field label="Telefono agenzia">{displayValue(agency?.telefono)}</Field>
         <Field label="Email agenzia">{displayValue(agency?.email)}</Field>
+        <Field label="Distanza agenzia">
+          {practice.agenzia_distanza_km === null
+            ? "—"
+            : `${practice.agenzia_distanza_km} km`}
+        </Field>
+        <Field label="Tempo in auto">
+          {practice.agenzia_durata_min === null
+            ? "—"
+            : `${practice.agenzia_durata_min} min`}
+        </Field>
       </ReadOnlySection>
 
       <ReadOnlySection title="Step 3 · Preferenza">

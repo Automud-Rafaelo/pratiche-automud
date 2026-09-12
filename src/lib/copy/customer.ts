@@ -118,6 +118,8 @@ export const customerCopy = {
     title: "Scegli l’agenzia dove fare il passaggio",
     description: "Ti mostriamo le opzioni più vicine alla posizione che hai indicato.",
     distance: "km",
+    routeMetrics: "{duration} min in auto · {distance} km",
+    approximateDistance: "circa {distance} km",
     noChoice: "Non ti va bene nessuna? Scrivici su WhatsApp",
     outsideRadius:
       "Non abbiamo agenzie entro {radius} km da te. Queste sono le più vicine: se sono troppo lontane, scrivici su WhatsApp e ne cerchiamo una insieme.",

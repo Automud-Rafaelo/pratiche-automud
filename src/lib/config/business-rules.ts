@@ -37,6 +37,14 @@ export const BUSINESS_RULES = {
     maximumResults: 4,
     showNearestWhenNoneInRadius: true,
   },
+  agencyRouting: {
+    candidateCount: 8,
+    travelMode: "DRIVE",
+    routingPreference: "TRAFFIC_UNAWARE",
+    fieldMask: "distanceMeters,duration",
+    fallback: "haversine",
+    timeoutMs: 5_000,
+  },
   appointmentPreference: {
     timeZone: "Europe/Rome",
     selectableDayCount: 3,
