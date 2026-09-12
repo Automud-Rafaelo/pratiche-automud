@@ -214,19 +214,20 @@ Ogni salvataggio dell'operatore genera un evento.
 
 ### `/admin/import-agenzie`
 
-Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indirizzo`, `cap`, `comune`, `provincia`, `lat`, `lng`, `maps_url`.
+Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, `telefono`, `indirizzo`, `cap`, `comune`, `provincia`, `maps_url`, `iban`, `intestatario_iban`, `costi_pratica`, `delega`, `istanza`. I link brevi `share.google` presenti in `maps_url` non vengono usati per l'import. `delega` e `istanza` accettano `si`, `no` o un valore vuoto, che significa sconosciuto.
 
-- Deduplicare su nome e CAP normalizzati: minuscolo e spazi collassati. Il CSV non contiene un ID.
-- Inserire o aggiornare ogni riga tramite upsert.
-- Se latitudine e longitudine sono già presenti, usarle senza chiamare Places e impostare `import_status = 'ok'`.
+- Deduplicare sull'email normalizzata in minuscolo e sul CAP normalizzato; quando il CAP è vuoto, usare la sola email. Il CSV non contiene un ID.
+- Prima dell'upsert riconciliare una tantum ogni riga con una riga esistente cercando email e CAP, oppure la sola email quando il CAP CSV è vuoto; se non c'è corrispondenza, cercare per nome e CAP normalizzati. Aggiornare la riga trovata conservandone coordinate, Place ID e orari.
+- Inserire le righe non riconciliate tramite upsert sulla nuova chiave e lasciarle `pending` senza coordinate.
+- Le righe esistenti assenti dal nuovo CSV non vengono eliminate: vengono rese inattive per conservare i riferimenti delle pratiche.
 - Per ogni riga `pending` senza coordinate, chiamare Google Places API (New), Text Search, con nome e indirizzo e salvare latitudine, longitudine, `google_place_id` e orari.
 - Se nessun risultato è trovato, impostare `import_status = 'not_found'`.
 - Salvare ogni errore Places in `import_error`, includendo la causa restituita dall'API, e mostrarlo accanto allo stato.
-- Eseguire al massimo dieci chiamate Places per pressione del bottone e mostrare quante righe sono state elaborate e quante restano `pending`.
+- Elaborare al massimo venti agenzie tramite Places per pressione del bottone e mostrare quante righe sono state elaborate e quante restano `pending`.
 - Salvare ogni riga singolarmente, così un'importazione interrotta riprende dalle righe `pending`.
 - Se `GOOGLE_MAPS_API_KEY` manca, inserire o aggiornare le righe, mantenerle `pending` e mostrare un messaggio chiaro.
-- Un'agenzia è `attiva` soltanto se possiede un telefono; l'email è facoltativa.
-- La pagina mostra il riepilogo totale/ok/not found/pending, le agenzie e permette di attivarle o disattivarle, rispettando il vincolo del telefono. Mostrare `indirizzo` una sola volta, senza aggiungere nuovamente CAP e comune.
+- Un'agenzia è `attiva` soltanto quando ha un telefono e sia `delega` sia `istanza` sono esplicitamente `false`. Un valore `true` o `null` in uno dei due campi la mantiene inattiva.
+- La pagina mostra il riepilogo totale/ok/not found/pending, il report create/aggiornate/disattivate/pending e tutte le colonne del CSV, compreso l'IBAN riservato agli operatori. Permette di attivare o disattivare le agenzie rispettando tutti i requisiti di attivazione. Mostrare `indirizzo` una sola volta, senza aggiungere nuovamente CAP e comune.
 
 ## Google Maps Platform
 
@@ -258,13 +259,15 @@ Legge `data/agenzie.csv`, le cui colonne sono `nome`, `email`, `telefono`, `indi
 
 - `id`: UUID, chiave primaria.
 - `nome`, `indirizzo`, `cap`, `comune`, `provincia`: testo importato dal CSV.
-- `nome_normalizzato`, `cap_normalizzato`: campi generati usati come chiave univoca per l'upsert.
-- `telefono`: testo nullable; senza telefono l'agenzia non può essere attiva.
-- `email`: testo facoltativo.
-- `lat`, `lng`: numerici nullable, provenienti dal CSV o da Places.
+- `nome_normalizzato`, `email_normalizzata`, `cap_normalizzato`: campi generati; email e CAP formano la chiave univoca dell'upsert.
+- `telefono`: testo nullable.
+- `email`: testo importato e normalizzato in minuscolo per la chiave.
+- `iban`, `intestatario_iban`, `costi_pratica`: testo nullable importato dal CSV e visibile soltanto nel pannello.
+- `delega`, `istanza`: booleani nullable; il valore nullo significa sconosciuto.
+- `lat`, `lng`: numerici nullable, ottenuti da Places; quelli già presenti sulle righe riconciliate vengono conservati.
 - `maps_url`, `google_place_id`: testo nullable.
 - `orari`: JSONB nullable ottenuto tramite Places e non mostrato nella v1.
-- `attiva`: booleano, consentito soltanto quando il telefono è presente.
+- `attiva`: booleano, consentito soltanto con telefono presente, `delega = false` e `istanza = false`.
 - `import_status`: `pending`, `ok` oppure `not_found`.
 - `import_error`: ultima causa di errore Places, nullable e cancellata dopo un esito conclusivo.
 
@@ -334,7 +337,7 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 
 ## Stato di avanzamento
 
-Ultimo aggiornamento: 9 settembre 2026.
+Ultimo aggiornamento: 12 settembre 2026.
 
 Completato:
 
@@ -347,7 +350,7 @@ Completato:
 - lista pratiche con filtro “Da verificare” e indicatori di attenzione;
 - creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
 - dettaglio pratica con dati cliente, verifiche a tre stati, appuntamento confermato, note e log eventi;
-- import idempotente di `data/agenzie.csv`, arricchimento tramite Places API (New), ripresa delle righe `pending` e attivazione/disattivazione;
+- import idempotente del CSV da 109 agenzie con riconciliazione delle righe storiche, deduplicazione email+CAP, disattivazione delle righe assenti e vincoli su telefono/delega/istanza;
 - accesso admin a Supabase esclusivamente server-side tramite service role;
 - flusso cliente completo `/p/[token]`, mobile-first, con una domanda per schermata, ripresa automatica e testi centralizzati;
 - navigazione cliente basata su un ordine fisso, con precedente/successiva applicabile e ripresa separata dal primo dato mancante;
@@ -364,7 +367,7 @@ Completato:
 - modifica del prezzo concordato con storico evento e lettura dinamica nel flusso cliente;
 - eliminazione definitiva della pratica e dei dati collegati tramite conferma della targa;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
-- import Places in batch da dieci con riepilogo e causa degli errori;
+- import Places in batch da venti con report create/aggiornate/disattivate/pending e causa degli errori;
 - test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, provider Places e tempi schermata;
 - `.env.example` completo;
 - istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.

@@ -8,6 +8,7 @@ import {
   type ImportSummary,
 } from "@/lib/admin/agency-import";
 import { requireAdminSession } from "@/lib/admin/auth";
+import { isAgencyEligible } from "@/lib/domain/agency-import";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
@@ -26,6 +27,9 @@ export async function importAgenciesAction() {
   revalidatePath("/admin/import-agenzie");
   const params = new URLSearchParams({
     imported: "1",
+    created: String(summary.created),
+    updated: String(summary.updated),
+    deactivated: String(summary.deactivated),
     processed: String(summary.processed),
     pending_before: String(summary.pendingBefore),
     pending_after: String(summary.pendingAfter),
@@ -46,7 +50,7 @@ export async function toggleAgencyAction(formData: FormData) {
   const supabase = createAdminSupabaseClient();
   const { data, error: loadError } = await supabase
     .from("agenzie")
-    .select("telefono")
+    .select("telefono,delega,istanza")
     .eq("id", agencyId)
     .single();
 
@@ -56,8 +60,8 @@ export async function toggleAgencyAction(formData: FormData) {
     redirect(`/admin/import-agenzie?toggle_error=${encodeURIComponent(message)}`);
   }
 
-  if (activate && !data.telefono?.trim()) {
-    redirect("/admin/import-agenzie?toggle_error=phone");
+  if (activate && !isAgencyEligible(data)) {
+    redirect("/admin/import-agenzie?toggle_error=eligibility");
   }
 
   const { error } = await supabase

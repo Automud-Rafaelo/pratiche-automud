@@ -29,6 +29,8 @@ export type PracticeRow = {
   cointestata: boolean | null;
   due_chiavi: boolean | null;
   agenzia_id: string | null;
+  agenzia_distanza_km: number | null;
+  agenzia_durata_min: number | null;
   preferenza_data: string | null;
   preferenza_fascia: AppointmentSlot | null;
   conosce_orari_proprietario: boolean | null;
@@ -59,11 +61,18 @@ export type AgencyRow = {
   provincia: string;
   telefono: string | null;
   email: string | null;
+  email_normalizzata: string;
   lat: number | null;
   lng: number | null;
   maps_url: string | null;
   google_place_id: string | null;
   orari: unknown | null;
+  orari_aggiornati_at: string | null;
+  iban: string | null;
+  intestatario_iban: string | null;
+  costi_pratica: string | null;
+  delega: boolean | null;
+  istanza: boolean | null;
   attiva: boolean;
   import_status: AgencyImportStatus;
   import_error: string | null;

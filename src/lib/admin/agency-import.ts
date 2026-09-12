@@ -4,26 +4,15 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { AgencyRow } from "@/lib/admin/types";
+import { BUSINESS_RULES } from "@/lib/config/business-rules";
 import {
-  BUSINESS_RULES,
-  normalizeAgencyKeyPart,
-} from "@/lib/config/business-rules";
+  findAgencyReconciliationMatch,
+  isAgencyEligible,
+  parseAgencyCsv,
+  parseNullableSiNo,
+  type CsvAgency,
+} from "@/lib/domain/agency-import";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-
-const CSV_HEADERS = [
-  "nome",
-  "email",
-  "telefono",
-  "indirizzo",
-  "cap",
-  "comune",
-  "provincia",
-  "lat",
-  "lng",
-  "maps_url",
-] as const;
-
-type CsvAgency = Record<(typeof CSV_HEADERS)[number], string>;
 
 type PlacesResult =
   | {
@@ -38,83 +27,29 @@ type PlacesResult =
 
 export type ImportSummary = {
   csvRows: number;
+  created: number;
+  updated: number;
+  deactivated: number;
   processed: number;
   pendingBefore: number;
   pendingAfter: number;
   missingApiKey: boolean;
 };
 
-function parseCsv(content: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-
-  for (let index = 0; index < content.length; index += 1) {
-    const character = content[index];
-    const nextCharacter = content[index + 1];
-
-    if (character === '"') {
-      if (quoted && nextCharacter === '"') {
-        field += '"';
-        index += 1;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (character === "," && !quoted) {
-      row.push(field);
-      field = "";
-    } else if ((character === "\n" || character === "\r") && !quoted) {
-      if (character === "\r" && nextCharacter === "\n") index += 1;
-      row.push(field);
-      if (row.some((value) => value.length > 0)) rows.push(row);
-      row = [];
-      field = "";
-    } else {
-      field += character;
-    }
-  }
-
-  if (field.length > 0 || row.length > 0) {
-    row.push(field);
-    rows.push(row);
-  }
-
-  return rows;
-}
-
 async function readAgencyCsv(): Promise<CsvAgency[]> {
   const filePath = path.join(process.cwd(), "data", "agenzie.csv");
-  const content = await readFile(filePath, "utf8");
-  const [headers, ...rows] = parseCsv(content.replace(/^\uFEFF/, ""));
-
-  if (!headers || headers.join(",") !== CSV_HEADERS.join(",")) {
-    throw new Error(
-      `Unexpected CSV columns. Expected: ${CSV_HEADERS.join(", ")}.`,
-    );
-  }
-
-  return rows.map((values, rowIndex) => {
-    if (values.length !== CSV_HEADERS.length) {
-      throw new Error(`Invalid CSV row ${rowIndex + 2}.`);
-    }
-
-    return Object.fromEntries(
-      CSV_HEADERS.map((header, index) => [header, values[index]?.trim() ?? ""]),
-    ) as CsvAgency;
-  });
+  return parseAgencyCsv(await readFile(filePath, "utf8"));
 }
 
-function parseCoordinate(value: string, minimum: number, maximum: number) {
-  if (!value) return null;
-  const parsed = Number(value.replace(",", "."));
-  return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum
-    ? parsed
-    : null;
+function nullable(value: string) {
+  return value || null;
 }
 
 async function searchPlace(
-  agency: CsvAgency,
+  agency: Pick<
+    CsvAgency,
+    "nome" | "indirizzo" | "cap" | "comune" | "provincia"
+  >,
   apiKey: string,
 ): Promise<PlacesResult> {
   const textQuery = [
@@ -156,16 +91,17 @@ async function searchPlace(
         regularOpeningHours?: unknown;
       }>;
     };
-
     if (!response.ok) {
       const reason =
-        payload.error?.message || payload.error?.status || `HTTP ${response.status}`;
+        payload.error?.message ||
+        payload.error?.status ||
+        `HTTP ${response.status}`;
       return { status: "retry", error: `Google Places: ${reason}` };
     }
+
     const place = payload.places?.[0];
     const latitude = place?.location?.latitude;
     const longitude = place?.location?.longitude;
-
     if (!place) return { status: "not_found" };
     if (
       !place.id ||
@@ -195,73 +131,100 @@ export async function importAgencies(): Promise<ImportSummary> {
   const rows = await readAgencyCsv();
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   const supabase = createAdminSupabaseClient();
+  const { data: existingData, error: existingError } = await supabase
+    .from("agenzie")
+    .select("*");
+  if (existingError) {
+    throw new Error(`Unable to load existing agencies: ${existingError.message}`);
+  }
+
+  const existing = (existingData ?? []) as AgencyRow[];
+  const claimedIds = new Set<string>();
+  let created = 0;
+  let updated = 0;
 
   for (const row of rows) {
-    if (!row.nome) {
-      throw new Error("Every agency row must include a name.");
+    const match = findAgencyReconciliationMatch(row, existing, claimedIds);
+    const delega = parseNullableSiNo(row.delega, `delega for ${row.nome}`);
+    const istanza = parseNullableSiNo(row.istanza, `istanza for ${row.nome}`);
+    const phone = nullable(row.telefono);
+    const values = {
+      nome: row.nome,
+      email: row.email.toLowerCase(),
+      telefono: phone,
+      indirizzo: row.indirizzo,
+      cap: row.cap,
+      comune: row.comune,
+      provincia: row.provincia,
+      maps_url: nullable(row.maps_url),
+      iban: nullable(row.iban),
+      intestatario_iban: nullable(row.intestatario_iban),
+      costi_pratica: nullable(row.costi_pratica),
+      delega,
+      istanza,
+      attiva: isAgencyEligible({ telefono: phone, delega, istanza }),
+    };
+
+    if (match) {
+      const hasCoordinates = match.lat !== null && match.lng !== null;
+      const { data, error } = await supabase
+        .from("agenzie")
+        .update({
+          ...values,
+          ...(hasCoordinates
+            ? { import_status: "ok", import_error: null }
+            : {}),
+        })
+        .eq("id", match.id)
+        .select("*")
+        .single();
+      if (error) {
+        throw new Error(`Unable to reconcile agency: ${error.message}`);
+      }
+      claimedIds.add(match.id);
+      Object.assign(match, data as AgencyRow);
+      updated += 1;
+      continue;
     }
 
-    const normalizedName = normalizeAgencyKeyPart(row.nome);
-    const normalizedPostalCode = normalizeAgencyKeyPart(row.cap);
-    const { data: existingData, error: existingError } = await supabase
-      .from("agenzie")
-      .select("*")
-      .eq("nome_normalizzato", normalizedName)
-      .eq("cap_normalizzato", normalizedPostalCode)
-      .maybeSingle();
-
-    if (existingError) {
-      throw new Error(`Unable to inspect agency: ${existingError.message}`);
-    }
-
-    const existing = existingData as AgencyRow | null;
-    const csvLat = parseCoordinate(row.lat, -90, 90);
-    const csvLng = parseCoordinate(row.lng, -180, 180);
-    const hasCsvCoordinates = csvLat !== null && csvLng !== null;
-    const hasExistingCoordinates =
-      existing?.lat !== null &&
-      existing?.lat !== undefined &&
-      existing?.lng !== null &&
-      existing?.lng !== undefined;
-    const phone = row.telefono || null;
-    let importStatus = hasCsvCoordinates
-      ? "ok"
-      : existing?.import_status ?? "pending";
-
-    if (hasExistingCoordinates && importStatus === "pending") {
-      importStatus = "ok";
-    }
-
-    const { data: upsertedData, error: upsertError } = await supabase
+    const { data, error } = await supabase
       .from("agenzie")
       .upsert(
         {
-          nome: row.nome,
-          email: row.email || null,
-          telefono: phone,
-          indirizzo: row.indirizzo,
-          cap: row.cap,
-          comune: row.comune,
-          provincia: row.provincia,
-          lat: hasCsvCoordinates ? csvLat : existing?.lat ?? null,
-          lng: hasCsvCoordinates ? csvLng : existing?.lng ?? null,
-          maps_url: row.maps_url || null,
-          google_place_id: existing?.google_place_id ?? null,
-          orari: existing?.orari ?? null,
-          attiva: phone ? (existing?.attiva ?? true) : false,
-          import_status: importStatus,
-          import_error: hasCsvCoordinates ? null : existing?.import_error ?? null,
+          ...values,
+          lat: null,
+          lng: null,
+          google_place_id: null,
+          orari: null,
+          orari_aggiornati_at: null,
+          import_status: "pending",
+          import_error: null,
         },
-        { onConflict: "nome_normalizzato,cap_normalizzato" },
+        { onConflict: "email_normalizzata,cap_normalizzato" },
       )
       .select("*")
       .single();
+    if (error) throw new Error(`Unable to create agency: ${error.message}`);
+    const inserted = data as AgencyRow;
+    existing.push(inserted);
+    claimedIds.add(inserted.id);
+    created += 1;
+  }
 
-    if (upsertError) {
-      throw new Error(`Unable to upsert agency: ${upsertError.message}`);
+  const toDeactivate = existing.filter(
+    (agency) => !claimedIds.has(agency.id) && agency.attiva,
+  );
+  if (toDeactivate.length > 0) {
+    const { error } = await supabase
+      .from("agenzie")
+      .update({ attiva: false })
+      .in(
+        "id",
+        toDeactivate.map((agency) => agency.id),
+      );
+    if (error) {
+      throw new Error(`Unable to deactivate old agencies: ${error.message}`);
     }
-
-    void upsertedData;
   }
 
   const { data: pendingData, error: pendingError } = await supabase
@@ -274,10 +237,17 @@ export async function importAgencies(): Promise<ImportSummary> {
   if (pendingError) {
     throw new Error(`Unable to load pending agencies: ${pendingError.message}`);
   }
-
   const pending = ((pendingData ?? []) as AgencyRow[]).filter(
     (agency) => agency.lat === null || agency.lng === null,
   );
+
+  const baseSummary = {
+    csvRows: rows.length,
+    created,
+    updated,
+    deactivated: toDeactivate.length,
+    pendingBefore: pending.length,
+  };
   if (!apiKey) {
     if (pending.length > 0) {
       const { error } = await supabase
@@ -290,16 +260,13 @@ export async function importAgencies(): Promise<ImportSummary> {
       if (error) {
         throw new Error(`Unable to save missing-key error: ${error.message}`);
       }
-    }
-    if (pending.length > 0) {
       console.error(
         "[Google Places] API key missing; pending agencies not processed",
       );
     }
     return {
-      csvRows: rows.length,
+      ...baseSummary,
       processed: 0,
-      pendingBefore: pending.length,
       pendingAfter: pending.length,
       missingApiKey: pending.length > 0,
     };
@@ -308,22 +275,7 @@ export async function importAgencies(): Promise<ImportSummary> {
   const batch = pending.slice(0, BUSINESS_RULES.agencyImport.placesBatchSize);
   await Promise.all(
     batch.map(async (agency) => {
-      const place = await searchPlace(
-        {
-          nome: agency.nome,
-          email: agency.email ?? "",
-          telefono: agency.telefono ?? "",
-          indirizzo: agency.indirizzo,
-          cap: agency.cap,
-          comune: agency.comune,
-          provincia: agency.provincia,
-          lat: "",
-          lng: "",
-          maps_url: agency.maps_url ?? "",
-        },
-        apiKey,
-      );
-
+      const place = await searchPlace(agency, apiKey);
       const update =
         place.status === "ok"
           ? {
@@ -340,7 +292,6 @@ export async function importAgencies(): Promise<ImportSummary> {
       if (place.status === "retry") {
         console.error(`[Google Places] ${agency.nome}: ${place.error}`);
       }
-
       const { error } = await supabase
         .from("agenzie")
         .update(update)
@@ -361,9 +312,8 @@ export async function importAgencies(): Promise<ImportSummary> {
   }
 
   return {
-    csvRows: rows.length,
+    ...baseSummary,
     processed: batch.length,
-    pendingBefore: pending.length,
     pendingAfter: pendingAfter ?? pending.length,
     missingApiKey: false,
   };

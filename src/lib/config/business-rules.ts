@@ -53,9 +53,13 @@ export const BUSINESS_RULES = {
     },
   },
   agencyImport: {
-    deduplicationFields: ["nome_normalizzato", "cap_normalizzato"],
-    activeRequiresPhone: true,
-    placesBatchSize: 10,
+    deduplicationFields: ["email_normalizzata", "cap_normalizzato"],
+    activeRequirements: {
+      phonePresent: true,
+      delega: false,
+      istanza: false,
+    },
+    placesBatchSize: 20,
   },
   placesAutocomplete: {
     minimumInputLength: 3,
