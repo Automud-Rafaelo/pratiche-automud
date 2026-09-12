@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AgencyOpeningHoursBlock } from "@/components/agency-opening-hours-block";
 import { AgencyQuestion } from "@/components/customer/agency-question";
 import { AppointmentQuestion } from "@/components/customer/appointment-question";
 import { ChoiceQuestion } from "@/components/customer/choice-question";
@@ -11,12 +12,14 @@ import {
 } from "@/components/customer/question-frame";
 import { TextQuestion } from "@/components/customer/text-question";
 import { formatMoney } from "@/lib/admin/format";
+import { refreshAgencyOpeningHours } from "@/lib/admin/agency-opening-hours";
 import type { AgencyRow } from "@/lib/admin/types";
 import {
   BUSINESS_RULES,
   getAppointmentPreferenceOptions,
 } from "@/lib/config/business-rules";
 import { customerCopy } from "@/lib/copy/customer";
+import { isAgencyOpeningHoursStale } from "@/lib/domain/agency-opening-hours";
 import { findNearbyAgencies } from "@/lib/customer/agencies";
 import {
   loadCustomerPractice,
@@ -730,16 +733,24 @@ export default async function CustomerPage({
           </li>
         </ul>
         {selectedAgency ? (
-          <div className="mt-4 rounded-3xl bg-[#F9DDB5]/60 p-5">
-            <p className="text-sm font-bold uppercase tracking-wide text-[#F7941D]">
-              {customerCopy.complete.selectedAgency}
-            </p>
-            <p className="mt-1 text-lg font-bold">{selectedAgency.nome}</p>
-            <p className="mt-1 text-sm">{selectedAgency.indirizzo}</p>
-            {selectedAgency.telefono ? (
-              <p className="mt-2 text-sm font-bold">{selectedAgency.telefono}</p>
-            ) : null}
-          </div>
+          <>
+            <div className="mt-4 rounded-3xl bg-[#F9DDB5]/60 p-5">
+              <p className="text-sm font-bold uppercase tracking-wide text-[#F7941D]">
+                {customerCopy.complete.selectedAgency}
+              </p>
+              <p className="mt-1 text-lg font-bold">{selectedAgency.nome}</p>
+              <p className="mt-1 text-sm">{selectedAgency.indirizzo}</p>
+              {selectedAgency.telefono ? (
+                <p className="mt-2 text-sm font-bold">{selectedAgency.telefono}</p>
+              ) : null}
+            </div>
+            <AgencyOpeningHoursBlock
+              hours={selectedAgency.orari}
+              phone={selectedAgency.telefono}
+              preferenceDate={practice.preferenza_data}
+              preferenceSlot={practice.preferenza_fascia}
+            />
+          </>
         ) : null}
         <p className="mt-6 text-center text-[17px]">
           <WhatsAppLink>{customerCopy.complete.contact}</WhatsAppLink>
@@ -764,5 +775,14 @@ async function loadSelectedAgency(practiceId: string, agencyId: string) {
     });
     return null;
   }
-  return data as AgencyRow | null;
+  const agency = data as AgencyRow | null;
+  if (
+    agency?.google_place_id &&
+    (!agency.orari ||
+      isAgencyOpeningHoursStale(agency.orari_aggiornati_at))
+  ) {
+    const refreshed = await refreshAgencyOpeningHours(agency.id);
+    return refreshed.ok ? refreshed.agency : (refreshed.agency ?? agency);
+  }
+  return agency;
 }

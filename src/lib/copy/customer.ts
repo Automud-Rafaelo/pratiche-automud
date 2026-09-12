@@ -184,6 +184,17 @@ export const customerCopy = {
     selectedAgency: "Agenzia scelta",
     contact: "Per qualsiasi cosa scrivici su WhatsApp.",
   },
+  openingHours: {
+    title: "Quando puoi passare",
+    morning: "Mattina",
+    afternoon: "Pomeriggio",
+    selected: "la tua fascia",
+    closedDay:
+      "L’agenzia è chiusa {requestedDate}. Ti mostriamo il giorno lavorativo più vicino: {nextDate}.",
+    callForHours: "Chiama per gli orari",
+    instructions:
+      "Non serve un orario preciso: puoi presentarti in qualsiasi momento della fascia, negli orari di apertura dell’agenzia. Porta con te un documento d’identità e libretto auto.",
+  },
   progress: "{current} di {total}",
   dateLabels: {
     today: "Oggi",

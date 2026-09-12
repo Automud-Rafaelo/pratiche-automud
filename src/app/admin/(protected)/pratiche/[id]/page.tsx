@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { CopyLinkButton } from "@/components/admin/copy-link-button";
+import { AgencyOpeningHoursBlock } from "@/components/agency-opening-hours-block";
 import { requireAdminSession } from "@/lib/admin/auth";
 import {
   buildCustomerLink,
@@ -378,6 +379,14 @@ export default async function PracticeDetailPage({
           Preferenza cliente: {formatDate(practice.preferenza_data)}, {practice.preferenza_fascia ?? "fascia non indicata"}.
           Agenzia: {agency?.nome ?? "non scelta"} · tel. {displayValue(agency?.telefono)} · email {displayValue(agency?.email)}.
         </p>
+        {agency ? (
+          <AgencyOpeningHoursBlock
+            hours={agency.orari}
+            phone={agency.telefono}
+            preferenceDate={practice.preferenza_data}
+            preferenceSlot={practice.preferenza_fascia}
+          />
+        ) : null}
         <form action={saveAppointmentAction} className="mt-4 grid gap-4 sm:grid-cols-2">
           <input name="practice_id" type="hidden" value={practice.id} />
           <label className="text-sm font-medium">

@@ -4,7 +4,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { AgencyRow } from "@/lib/admin/types";
+import { refreshAgencyOpeningHours } from "@/lib/admin/agency-opening-hours";
 import { BUSINESS_RULES } from "@/lib/config/business-rules";
+import { isAgencyOpeningHoursStale } from "@/lib/domain/agency-opening-hours";
 import {
   findAgencyReconciliationMatch,
   isAgencyEligible,
@@ -20,7 +22,6 @@ type PlacesResult =
       lat: number;
       lng: number;
       placeId: string;
-      openingHours: unknown | null;
     }
   | { status: "not_found" }
   | { status: "retry"; error: string };
@@ -70,8 +71,7 @@ async function searchPlace(
         headers: {
           "Content-Type": "application/json",
           "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask":
-            "places.id,places.location,places.regularOpeningHours",
+          "X-Goog-FieldMask": "places.id,places.location",
         },
         body: JSON.stringify({
           textQuery,
@@ -88,7 +88,6 @@ async function searchPlace(
       places?: Array<{
         id?: string;
         location?: { latitude?: number; longitude?: number };
-        regularOpeningHours?: unknown;
       }>;
     };
     if (!response.ok) {
@@ -119,7 +118,6 @@ async function searchPlace(
       lat: latitude,
       lng: longitude,
       placeId: place.id,
-      openingHours: place.regularOpeningHours ?? null,
     };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "errore di rete";
@@ -227,19 +225,31 @@ export async function importAgencies(): Promise<ImportSummary> {
     }
   }
 
-  const { data: pendingData, error: pendingError } = await supabase
-    .from("agenzie")
-    .select("*")
-    .eq("import_status", "pending")
-    .or("lat.is.null,lng.is.null")
-    .order("import_error", { ascending: true, nullsFirst: true })
-    .order("nome", { ascending: true });
-  if (pendingError) {
-    throw new Error(`Unable to load pending agencies: ${pendingError.message}`);
-  }
-  const pending = ((pendingData ?? []) as AgencyRow[]).filter(
-    (agency) => agency.lat === null || agency.lng === null,
-  );
+  const loadWorkQueue = async () => {
+    const { data, error } = await supabase
+      .from("agenzie")
+      .select("*")
+      .order("nome", { ascending: true });
+    if (error) {
+      throw new Error(`Unable to load pending agencies: ${error.message}`);
+    }
+    const agencies = (data ?? []) as AgencyRow[];
+    const coordinatePending = agencies.filter(
+      (agency) =>
+        agency.import_status === "pending" &&
+        (agency.lat === null || agency.lng === null),
+    );
+    const coordinateIds = new Set(coordinatePending.map((agency) => agency.id));
+    const hoursPending = agencies.filter(
+      (agency) =>
+        !coordinateIds.has(agency.id) &&
+        Boolean(agency.google_place_id) &&
+        (!agency.orari ||
+          isAgencyOpeningHoursStale(agency.orari_aggiornati_at)),
+    );
+    return [...coordinatePending, ...hoursPending];
+  };
+  const pending = await loadWorkQueue();
 
   const baseSummary = {
     csvRows: rows.length,
@@ -275,46 +285,48 @@ export async function importAgencies(): Promise<ImportSummary> {
   const batch = pending.slice(0, BUSINESS_RULES.agencyImport.placesBatchSize);
   await Promise.all(
     batch.map(async (agency) => {
-      const place = await searchPlace(agency, apiKey);
-      const update =
-        place.status === "ok"
-          ? {
-              lat: place.lat,
-              lng: place.lng,
-              google_place_id: place.placeId,
-              orari: place.openingHours,
-              import_status: "ok",
-              import_error: null,
-            }
-          : place.status === "not_found"
-            ? { import_status: "not_found", import_error: null }
-            : { import_status: "pending", import_error: place.error };
-      if (place.status === "retry") {
-        console.error(`[Google Places] ${agency.nome}: ${place.error}`);
+      let placeId = agency.google_place_id;
+      if (
+        agency.import_status === "pending" &&
+        (agency.lat === null || agency.lng === null)
+      ) {
+        const place = await searchPlace(agency, apiKey);
+        const update =
+          place.status === "ok"
+            ? {
+                lat: place.lat,
+                lng: place.lng,
+                google_place_id: place.placeId,
+                import_status: "ok",
+                import_error: null,
+              }
+            : place.status === "not_found"
+              ? { import_status: "not_found", import_error: null }
+              : { import_status: "pending", import_error: place.error };
+        if (place.status === "retry") {
+          console.error(`[Google Places] ${agency.nome}: ${place.error}`);
+        }
+        const { error } = await supabase
+          .from("agenzie")
+          .update(update)
+          .eq("id", agency.id);
+        if (error) {
+          throw new Error(`Unable to save Places result: ${error.message}`);
+        }
+        if (place.status !== "ok") return;
+        placeId = place.placeId;
       }
-      const { error } = await supabase
-        .from("agenzie")
-        .update(update)
-        .eq("id", agency.id);
-      if (error) {
-        throw new Error(`Unable to save Places result: ${error.message}`);
-      }
+
+      if (placeId) await refreshAgencyOpeningHours(agency.id);
     }),
   );
 
-  const { count: pendingAfter, error: countError } = await supabase
-    .from("agenzie")
-    .select("id", { count: "exact", head: true })
-    .eq("import_status", "pending")
-    .or("lat.is.null,lng.is.null");
-  if (countError) {
-    throw new Error(`Unable to count pending agencies: ${countError.message}`);
-  }
+  const pendingAfter = (await loadWorkQueue()).length;
 
   return {
     ...baseSummary,
     processed: batch.length,
-    pendingAfter: pendingAfter ?? pending.length,
+    pendingAfter,
     missingApiKey: false,
   };
 }

@@ -143,6 +143,10 @@ Mostrare una spiegazione finale:
 - se l'auto è in deposito o carrozzeria non serve la presenza del cliente, ma il cliente deve avvisare la struttura;
 - il carro attrezzi contatterà il cliente entro 24 ore.
 
+Sotto il riepilogo dell'agenzia mostrare “Quando puoi passare” con gli orari del giorno preferito separati in mattina e pomeriggio alle 13:00 ed evidenziare la fascia scelta. Se quel giorno è chiuso, mostrare il giorno lavorativo successivo più vicino con un avviso. Aggiungere sempre: “Non serve un orario preciso: puoi presentarti in qualsiasi momento della fascia, negli orari di apertura dell'agenzia. Porta con te un documento d'identità e libretto auto.” Se gli orari non sono disponibili, mostrare soltanto questo testo, il telefono e “Chiama per gli orari”.
+
+Prima di renderizzare la schermata finale, se gli orari dell'agenzia scelta sono assenti o più vecchi di sette giorni, tentare un refresh Place Details con timeout di cinque secondi. In caso di errore mostrare gli orari in cache o il fallback, e creare un avviso operatore con la causa.
+
 Impostare quindi lo stato su `completata`. Le verifiche e la conferma dell'appuntamento avvengono successivamente e non sono visibili nel flusso cliente.
 
 ## Verifiche dell'operatore
@@ -206,6 +210,7 @@ Mostra:
 - per il ritiro, nome dell'attività se presente, indirizzo e link “Apri in Google Maps” quando sono disponibili le coordinate;
 - cinque verifiche a tre stati con etichette italiane e il bottone “Verifiche completate”;
 - preferenza del cliente, agenzia scelta con telefono ed email, data e fascia dell'appuntamento confermato modificabili;
+- blocco degli orari dell'agenzia relativo alla data e fascia preferite dal cliente;
 - note operatore modificabili;
 - log eventi in ordine cronologico inverso.
 - tabella “Tempo per schermata” con ogni completamento, incluse le ripetizioni dovute alla navigazione indietro, durata in secondi e totale.
@@ -221,24 +226,26 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 - Prima dell'upsert riconciliare una tantum ogni riga con una riga esistente cercando email e CAP, oppure la sola email quando il CAP CSV è vuoto; se non c'è corrispondenza, cercare per nome e CAP normalizzati. Aggiornare la riga trovata conservandone coordinate, Place ID e orari.
 - Inserire le righe non riconciliate tramite upsert sulla nuova chiave e lasciarle `pending` senza coordinate.
 - Le righe esistenti assenti dal nuovo CSV non vengono eliminate: vengono rese inattive per conservare i riferimenti delle pratiche.
-- Per ogni riga `pending` senza coordinate, chiamare Google Places API (New), Text Search, con nome e indirizzo e salvare latitudine, longitudine, `google_place_id` e orari.
+- Per ogni riga `pending` senza coordinate, chiamare Google Places API (New), Text Search, con nome e indirizzo e salvare latitudine, longitudine e `google_place_id`.
+- Durante l'import, per ogni agenzia con `google_place_id` e orari assenti o più vecchi di sette giorni, richiamare Place Details (New) e salvare `regularOpeningHours`, `businessStatus` e l'istante di aggiornamento. Questo vale anche per le agenzie che possiedono già le coordinate.
 - Se nessun risultato è trovato, impostare `import_status = 'not_found'`.
 - Salvare ogni errore Places in `import_error`, includendo la causa restituita dall'API, e mostrarlo accanto allo stato.
 - Elaborare al massimo venti agenzie tramite Places per pressione del bottone e mostrare quante righe sono state elaborate e quante restano `pending`.
 - Salvare ogni riga singolarmente, così un'importazione interrotta riprende dalle righe `pending`.
 - Se `GOOGLE_MAPS_API_KEY` manca, inserire o aggiornare le righe, mantenerle `pending` e mostrare un messaggio chiaro.
 - Un'agenzia è `attiva` soltanto quando ha un telefono e sia `delega` sia `istanza` sono esplicitamente `false`. Un valore `true` o `null` in uno dei due campi la mantiene inattiva.
-- La pagina mostra il riepilogo totale/ok/not found/pending, il report create/aggiornate/disattivate/pending e tutte le colonne del CSV, compreso l'IBAN riservato agli operatori. Permette di attivare o disattivare le agenzie rispettando tutti i requisiti di attivazione. Mostrare `indirizzo` una sola volta, senza aggiungere nuovamente CAP e comune.
+- La pagina mostra il riepilogo totale/ok/not found/pending, il report create/aggiornate/disattivate/pending e tutte le colonne del CSV, compreso l'IBAN riservato agli operatori. Mostra inoltre quando gli orari sono stati aggiornati e consente il refresh di una singola agenzia. Permette di attivare o disattivare le agenzie rispettando tutti i requisiti di attivazione. Mostrare `indirizzo` una sola volta, senza aggiungere nuovamente CAP e comune.
 
 ## Google Maps Platform
 
 - Usare `GOOGLE_MAPS_API_KEY` solo in route handler o server action.
 - L'autocomplete cliente passa esclusivamente dai proxy server `POST /api/places/suggest` e `POST /api/places/resolve`, accessibili soltanto con un token pratica valido e limitati complessivamente a 30 richieste al minuto per pratica.
 - Ogni ricerca autocomplete usa un session token UUID generato dal server, riutilizzato durante la digitazione e passato a Place Details (New) alla selezione per chiudere la sessione.
-- Place Details (New) richiede soltanto `id`, `displayName`, `formattedAddress` e `location` tramite field mask.
+- Place Details (New) dell'autocomplete richiede soltanto `id`, `displayName`, `formattedAddress` e `location` tramite field mask.
+- Il refresh degli orari usa Place Details (New) con field mask `regularOpeningHours,businessStatus`, un timeout di cinque secondi e una cache applicativa di sette giorni.
 - Usare Places API (New), Text Search, soltanto durante l'import delle agenzie.
+- Gli orari usano Place Details (New), richiesto come integrazione Place Details Pro, con la field mask minima indicata sopra.
 - Calcolare la distanza tra le agenzie e le coordinate della posizione confermata localmente con Haversine.
-- Gli orari ottenuti da Places sono salvati in `agenzie.orari`, ma non sono mostrati al cliente nella v1.
 
 ## Modello dati Supabase
 
@@ -267,7 +274,8 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 - `delega`, `istanza`: booleani nullable; il valore nullo significa sconosciuto.
 - `lat`, `lng`: numerici nullable, ottenuti da Places; quelli già presenti sulle righe riconciliate vengono conservati.
 - `maps_url`, `google_place_id`: testo nullable.
-- `orari`: JSONB nullable ottenuto tramite Places e non mostrato nella v1.
+- `orari`: JSONB nullable con `regularOpeningHours` e `businessStatus` ottenuti tramite Place Details e mostrati nel riepilogo finale e nel dettaglio pratica.
+- `orari_aggiornati_at`: timestamp nullable dell'ultimo refresh riuscito; gli orari scadono dopo sette giorni.
 - `attiva`: booleano, consentito soltanto con telefono presente, `delega = false` e `istanza = false`.
 - `import_status`: `pending`, `ok` oppure `not_found`.
 - `import_error`: ultima causa di errore Places, nullable e cancellata dopo un esito conclusivo.
@@ -300,6 +308,7 @@ Prenotazioni del rate limit del proxy Places: `id`, `pratica_id` con cancellazio
 - calendario a tre giorni, esclusione domenica, sabato solo mattina, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
 - durata e rate limit della sessione admin;
 - autocomplete Places: minimo tre caratteri, debounce 300 ms, massimo 30 richieste al minuto e massimo cinque suggerimenti;
+- orari agenzia: TTL sette giorni, timeout cinque secondi, field mask Place Details e divisione delle fasce alle 13:00;
 - normalizzazione della chiave di deduplicazione delle agenzie.
 - validazione completa di codice fiscale, IBAN e telefono, batch Places e formula di Haversine.
 
@@ -346,7 +355,7 @@ Completato:
 - dipendenza `@supabase/supabase-js`;
 - specifica aggiornata al flusso cliente senza verifiche bloccanti;
 - regole di business centralizzate aggiornate;
-- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente, migration per `targa_cliente` e migration unica per Places, campi ritiro, rimozione CAP cliente e cancellazioni a cascata;
+- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente, migration per `targa_cliente`, migration Places/ritiro/cascade e migration unica per dati agenzie, orari e metriche Routes;
 - autenticazione admin con cookie firmato, scadenza a 12 ore e rate limit persistente per IP;
 - lista pratiche con filtro “Da verificare” e indicatori di attenzione;
 - creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
@@ -365,12 +374,13 @@ Completato:
 - calendario server-side basato esclusivamente su `getAppointmentPreferenceOptions`;
 - sabato limitato alla fascia mattina nel calendario, con test automatici;
 - pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
+- refresh e visualizzazione degli orari dell'agenzia nella pagina finale e nel pannello, con cache di sette giorni e fallback telefonico;
 - tempi di completamento delle singole schermate, incluse ripetizioni, riepilogati nel pannello;
 - modifica del prezzo concordato con storico evento e lettura dinamica nel flusso cliente;
 - eliminazione definitiva della pratica e dei dati collegati tramite conferma della targa;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
 - import Places in batch da venti con report create/aggiornate/disattivate/pending e causa degli errori;
-- test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, provider Places e tempi schermata;
+- test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, parser orari, provider Places e tempi schermata;
 - `.env.example` completo;
 - istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.
 
@@ -380,7 +390,7 @@ Non ancora implementato:
 
 ## Domande aperte
 
-Nessuna.
+- La documentazione Google corrente classifica `regularOpeningHours` nella SKU Place Details Enterprise, non Pro: confermare che costi e restrizioni del progetto Google Cloud siano compatibili prima del test in produzione.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

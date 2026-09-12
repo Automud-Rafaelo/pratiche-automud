@@ -64,6 +64,13 @@ export const BUSINESS_RULES = {
     },
     placesBatchSize: 20,
   },
+  agencyOpeningHours: {
+    ttlDays: 7,
+    refreshTimeoutMs: 5_000,
+    placeDetailsFieldMask: "regularOpeningHours,businessStatus",
+    continuousDaySplitAt: "13:00",
+    nearestWorkingDaySearchDays: 7,
+  },
   placesAutocomplete: {
     minimumInputLength: 3,
     debounceMs: 300,

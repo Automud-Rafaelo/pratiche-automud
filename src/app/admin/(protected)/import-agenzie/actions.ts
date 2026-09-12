@@ -7,6 +7,7 @@ import {
   importAgencies,
   type ImportSummary,
 } from "@/lib/admin/agency-import";
+import { refreshAgencyOpeningHours } from "@/lib/admin/agency-opening-hours";
 import { requireAdminSession } from "@/lib/admin/auth";
 import { isAgencyEligible } from "@/lib/domain/agency-import";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
@@ -77,4 +78,21 @@ export async function toggleAgencyAction(formData: FormData) {
 
   revalidatePath("/admin/import-agenzie");
   redirect("/admin/import-agenzie?toggle_saved=1");
+}
+
+export async function refreshAgencyHoursAction(formData: FormData) {
+  await requireAdminSession();
+  const agencyId = formData.get("agency_id");
+  if (typeof agencyId !== "string" || !agencyId) {
+    throw new Error("Missing agency id.");
+  }
+
+  const result = await refreshAgencyOpeningHours(agencyId);
+  revalidatePath("/admin/import-agenzie");
+  if (!result.ok) {
+    redirect(
+      `/admin/import-agenzie?hours_error=${encodeURIComponent(result.error)}`,
+    );
+  }
+  redirect("/admin/import-agenzie?hours_saved=1");
 }
