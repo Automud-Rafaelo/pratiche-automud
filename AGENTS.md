@@ -126,6 +126,7 @@ Regole del calendario, calcolate lato server nel fuso `Europe/Rome`:
 - non offrire mai la domenica; saltarla e aggiungere il giorno successivo per mantenere tre opzioni;
 - dopo le 18:00 non offrire oggi e partire da domani;
 - dopo le 12:00 e fino alle 18:00 offrire oggi soltanto con la fascia `pomeriggio`;
+- il sabato offrire soltanto la fascia `mattina`; se il sabato corrente non ha più fasce disponibili, saltarlo;
 - negli altri giorni offrire `mattina` e `pomeriggio`.
 
 ### Step 4 — Ritiro
@@ -296,7 +297,7 @@ Prenotazioni del rate limit del proxy Places: `id`, `pratica_id` con cancellazio
 - normalizzazione e validazione non bloccante della targa;
 - normalizzazione di marca e modello con iniziale maiuscola per parola;
 - raggio di 25 km, massimo quattro agenzie e fallback alle quattro più vicine;
-- calendario a tre giorni, esclusione domenica, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
+- calendario a tre giorni, esclusione domenica, sabato solo mattina, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
 - durata e rate limit della sessione admin;
 - autocomplete Places: minimo tre caratteri, debounce 300 ms, massimo 30 richieste al minuto e massimo cinque suggerimenti;
 - normalizzazione della chiave di deduplicazione delle agenzie.
@@ -362,6 +363,7 @@ Completato:
 - normalizzazione di marca e modello alla creazione della pratica;
 - calcolo Haversine dalle coordinate scelte, fallback senza agenzia ed eventi di attenzione;
 - calendario server-side basato esclusivamente su `getAppointmentPreferenceOptions`;
+- sabato limitato alla fascia mattina nel calendario, con test automatici;
 - pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
 - tempi di completamento delle singole schermate, incluse ripetizioni, riepilogati nel pannello;
 - modifica del prezzo concordato con storico evento e lettura dinamica nel flusso cliente;

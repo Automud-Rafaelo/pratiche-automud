@@ -44,6 +44,9 @@ export const BUSINESS_RULES = {
     afternoonOnlyAfter: "12:00",
     excludeTodayAfter: "18:00",
     slots: APPOINTMENT_SLOTS,
+    slotsByWeekday: {
+      6: ["mattina"],
+    } satisfies Record<number, readonly AppointmentSlot[]>,
   },
   adminSession: {
     durationHours: 12,
@@ -297,11 +300,20 @@ export function getAppointmentPreferenceOptions(
         weekday,
       )
     ) {
-      const slots =
+      const timeAllowedSlots =
         offset === 0 && minutes > afternoonCutoff
           ? (["pomeriggio"] as const)
           : BUSINESS_RULES.appointmentPreference.slots;
-      options.push({ date, slots });
+      const weekdaySlots = (
+        BUSINESS_RULES.appointmentPreference.slotsByWeekday as Record<
+          number,
+          readonly AppointmentSlot[] | undefined
+        >
+      )[weekday];
+      const slots = weekdaySlots
+        ? timeAllowedSlots.filter((slot) => weekdaySlots.includes(slot))
+        : timeAllowedSlots;
+      if (slots.length > 0) options.push({ date, slots });
     }
 
     offset += 1;
