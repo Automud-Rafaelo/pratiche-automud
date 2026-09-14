@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { CopyLinkButton } from "@/components/admin/copy-link-button";
+import { AgencyOpeningHoursBlock } from "@/components/agency-opening-hours-block";
 import { requireAdminSession } from "@/lib/admin/auth";
 import {
   buildCustomerLink,
@@ -285,6 +286,16 @@ export default async function PracticeDetailPage({
         <Field label="Indirizzo agenzia">{agency?.indirizzo ?? "—"}</Field>
         <Field label="Telefono agenzia">{displayValue(agency?.telefono)}</Field>
         <Field label="Email agenzia">{displayValue(agency?.email)}</Field>
+        <Field label="Distanza agenzia">
+          {practice.agenzia_distanza_km === null
+            ? "—"
+            : `${practice.agenzia_distanza_km} km`}
+        </Field>
+        <Field label="Tempo in auto">
+          {practice.agenzia_durata_min === null
+            ? "—"
+            : `${practice.agenzia_durata_min} min`}
+        </Field>
       </ReadOnlySection>
 
       <ReadOnlySection title="Step 3 · Preferenza">
@@ -378,6 +389,14 @@ export default async function PracticeDetailPage({
           Preferenza cliente: {formatDate(practice.preferenza_data)}, {practice.preferenza_fascia ?? "fascia non indicata"}.
           Agenzia: {agency?.nome ?? "non scelta"} · tel. {displayValue(agency?.telefono)} · email {displayValue(agency?.email)}.
         </p>
+        {agency ? (
+          <AgencyOpeningHoursBlock
+            hours={agency.orari}
+            phone={agency.telefono}
+            preferenceDate={practice.preferenza_data}
+            preferenceSlot={practice.preferenza_fascia}
+          />
+        ) : null}
         <form action={saveAppointmentAction} className="mt-4 grid gap-4 sm:grid-cols-2">
           <input name="practice_id" type="hidden" value={practice.id} />
           <label className="text-sm font-medium">

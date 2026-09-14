@@ -118,6 +118,8 @@ export const customerCopy = {
     title: "Scegli l’agenzia dove fare il passaggio",
     description: "Ti mostriamo le opzioni più vicine alla posizione che hai indicato.",
     distance: "km",
+    routeMetrics: "{duration} min in auto · {distance} km",
+    approximateDistance: "circa {distance} km",
     noChoice: "Non ti va bene nessuna? Scrivici su WhatsApp",
     outsideRadius:
       "Non abbiamo agenzie entro {radius} km da te. Queste sono le più vicine: se sono troppo lontane, scrivici su WhatsApp e ne cerchiamo una insieme.",
@@ -183,6 +185,17 @@ export const customerCopy = {
     towTruck: "Il carro attrezzi ti chiamerà al {phone} entro 24 ore.",
     selectedAgency: "Agenzia scelta",
     contact: "Per qualsiasi cosa scrivici su WhatsApp.",
+  },
+  openingHours: {
+    title: "Quando puoi passare",
+    morning: "Mattina",
+    afternoon: "Pomeriggio",
+    selected: "la tua fascia",
+    closedDay:
+      "L’agenzia è chiusa {requestedDate}. Ti mostriamo il giorno lavorativo più vicino: {nextDate}.",
+    callForHours: "Chiama per gli orari",
+    instructions:
+      "Non serve un orario preciso: puoi presentarti in qualsiasi momento della fascia, negli orari di apertura dell’agenzia. Porta con te un documento d’identità e libretto auto.",
   },
   progress: "{current} di {total}",
   dateLabels: {

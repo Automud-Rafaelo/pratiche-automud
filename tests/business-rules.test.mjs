@@ -71,6 +71,21 @@ test("starts from tomorrow after 18:00 in Rome", () => {
   assert.equal(first.date, "2026-09-05");
 });
 
+test("offers Saturday morning only", () => {
+  const options = getAppointmentPreferenceOptions(
+    new Date("2026-09-04T09:00:00Z"),
+  );
+  const saturday = options.find((option) => option.date === "2026-09-05");
+  assert.deepEqual(saturday?.slots, ["mattina"]);
+});
+
+test("skips the current Saturday after its morning slot has passed", () => {
+  const [first] = getAppointmentPreferenceOptions(
+    new Date("2026-09-05T11:30:00Z"),
+  );
+  assert.equal(first.date, "2026-09-07");
+});
+
 test("calculates Haversine distance in kilometres", () => {
   const distance = calculateHaversineDistanceKm(
     { lat: 41.9028, lng: 12.4964 },

@@ -45,7 +45,14 @@ export function AgencyQuestion({
             <span className="block text-[17px] font-bold">{agency.nome}</span>
             <span className="mt-1 block text-sm">{agency.indirizzo}</span>
             <span className="mt-2 block text-sm font-bold">
-              {agency.distanceKm.toFixed(1)} {customerCopy.agency.distance}
+              {agency.distanceKind === "route" && agency.durationMin !== null
+                ? customerCopy.agency.routeMetrics
+                    .replace("{duration}", String(agency.durationMin))
+                    .replace("{distance}", String(Math.round(agency.distanceKm)))
+                : customerCopy.agency.approximateDistance.replace(
+                    "{distance}",
+                    String(Math.round(agency.distanceKm)),
+                  )}
               {agency.telefono ? ` · ${agency.telefono}` : ""}
             </span>
           </label>

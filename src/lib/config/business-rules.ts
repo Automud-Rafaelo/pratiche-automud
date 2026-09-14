@@ -37,6 +37,14 @@ export const BUSINESS_RULES = {
     maximumResults: 4,
     showNearestWhenNoneInRadius: true,
   },
+  agencyRouting: {
+    candidateCount: 8,
+    travelMode: "DRIVE",
+    routingPreference: "TRAFFIC_UNAWARE",
+    fieldMask: "distanceMeters,duration",
+    fallback: "haversine",
+    timeoutMs: 5_000,
+  },
   appointmentPreference: {
     timeZone: "Europe/Rome",
     selectableDayCount: 3,
@@ -44,6 +52,9 @@ export const BUSINESS_RULES = {
     afternoonOnlyAfter: "12:00",
     excludeTodayAfter: "18:00",
     slots: APPOINTMENT_SLOTS,
+    slotsByWeekday: {
+      6: ["mattina"],
+    } satisfies Record<number, readonly AppointmentSlot[]>,
   },
   adminSession: {
     durationHours: 12,
@@ -53,9 +64,20 @@ export const BUSINESS_RULES = {
     },
   },
   agencyImport: {
-    deduplicationFields: ["nome_normalizzato", "cap_normalizzato"],
-    activeRequiresPhone: true,
-    placesBatchSize: 10,
+    deduplicationFields: ["email_normalizzata", "cap_normalizzato"],
+    activeRequirements: {
+      phonePresent: true,
+      delega: false,
+      istanza: false,
+    },
+    placesBatchSize: 20,
+  },
+  agencyOpeningHours: {
+    ttlDays: 7,
+    refreshTimeoutMs: 5_000,
+    placeDetailsFieldMask: "regularOpeningHours,businessStatus",
+    continuousDaySplitAt: "13:00",
+    nearestWorkingDaySearchDays: 7,
   },
   placesAutocomplete: {
     minimumInputLength: 3,
@@ -293,11 +315,20 @@ export function getAppointmentPreferenceOptions(
         weekday,
       )
     ) {
-      const slots =
+      const timeAllowedSlots =
         offset === 0 && minutes > afternoonCutoff
           ? (["pomeriggio"] as const)
           : BUSINESS_RULES.appointmentPreference.slots;
-      options.push({ date, slots });
+      const weekdaySlots = (
+        BUSINESS_RULES.appointmentPreference.slotsByWeekday as Record<
+          number,
+          readonly AppointmentSlot[] | undefined
+        >
+      )[weekday];
+      const slots = weekdaySlots
+        ? timeAllowedSlots.filter((slot) => weekdaySlots.includes(slot))
+        : timeAllowedSlots;
+      if (slots.length > 0) options.push({ date, slots });
     }
 
     offset += 1;

@@ -289,6 +289,8 @@ export async function saveAgencyLocationAction(formData: FormData) {
   await updateCustomerPractice(practice.id, {
     ...values,
     agenzia_id: null,
+    agenzia_distanza_km: null,
+    agenzia_durata_min: null,
   });
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "ricerca_indirizzo",
@@ -371,12 +373,17 @@ export async function saveAgencyAction(formData: FormData) {
     revalidatePath(`/p/${token}`);
     redirect(`/p/${token}?view=agency_fallback#top`);
   }
-  if (!result.agencies.some((agency) => agency.id === agencyId)) {
+  const selectedAgency = result.agencies.find(
+    (agency) => agency.id === agencyId,
+  );
+  if (!selectedAgency) {
     invalidAction(token, "agency");
   }
 
   await updateCustomerPractice(practice.id, {
     agenzia_id: agencyId,
+    agenzia_distanza_km: Number(selectedAgency.distanceKm.toFixed(2)),
+    agenzia_durata_min: selectedAgency.durationMin,
     status: "step3_appuntamento",
   });
   await recordCustomerEvent(practice.id, "agenzia_scelta");
@@ -393,6 +400,8 @@ export async function continueWithoutAgencyAction(formData: FormData) {
   );
   await updateCustomerPractice(practice.id, {
     agenzia_id: null,
+    agenzia_distanza_km: null,
+    agenzia_durata_min: null,
     status: "step3_appuntamento",
   });
   await recordCustomerEvent(practice.id, "stato_aggiornato", {

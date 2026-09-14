@@ -6,14 +6,39 @@ import {
   calculateHaversineDistanceKm,
 } from "@/lib/config/business-rules";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
+import {
+  createGoogleRoutesProvider,
+  sortRouteMetricsByDuration,
+  type RouteDestination,
+} from "@/lib/google/routes";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 export type NearbyAgency = Pick<
   AgencyRow,
   "id" | "nome" | "indirizzo" | "telefono"
-> & { distanceKm: number };
+> & {
+  distanceKm: number;
+  durationMin: number | null;
+  distanceKind: "route" | "haversine";
+};
 
 export type Coordinates = { lat: number; lng: number };
+
+type RankedAgency = NearbyAgency & RouteDestination;
+
+function toFallback(agencies: readonly RankedAgency[]): NearbyAgency[] {
+  return agencies
+    .slice(0, BUSINESS_RULES.nearbyAgencies.maximumResults)
+    .map(({ id, nome, indirizzo, telefono, distanceKm }) => ({
+      id,
+      nome,
+      indirizzo,
+      telefono,
+      distanceKm,
+      durationMin: null,
+      distanceKind: "haversine",
+    }));
+}
 
 export async function findNearbyAgencies(
   practiceId: string,
@@ -41,17 +66,27 @@ export async function findNearbyAgencies(
   }
 
   const ranked = (data ?? [])
-    .map((agency) => ({
-      id: agency.id as string,
-      nome: agency.nome as string,
-      indirizzo: agency.indirizzo as string,
-      telefono: agency.telefono as string | null,
-      distanceKm: calculateHaversineDistanceKm(coordinates, {
-        lat: Number(agency.lat),
-        lng: Number(agency.lng),
-      }),
-    }))
-    .filter((agency) => Number.isFinite(agency.distanceKm))
+    .map((agency) => {
+      const lat = Number(agency.lat);
+      const lng = Number(agency.lng);
+      return {
+        id: agency.id as string,
+        nome: agency.nome as string,
+        indirizzo: agency.indirizzo as string,
+        telefono: agency.telefono as string | null,
+        lat,
+        lng,
+        distanceKm: calculateHaversineDistanceKm(coordinates, { lat, lng }),
+        durationMin: null,
+        distanceKind: "haversine" as const,
+      };
+    })
+    .filter(
+      (agency) =>
+        Number.isFinite(agency.lat) &&
+        Number.isFinite(agency.lng) &&
+        Number.isFinite(agency.distanceKm),
+    )
     .sort((left, right) => left.distanceKm - right.distanceKm);
 
   if (ranked.length === 0) {
@@ -61,15 +96,60 @@ export async function findNearbyAgencies(
     };
   }
 
-  const withinRadius = ranked.filter(
-    (agency) => agency.distanceKm <= BUSINESS_RULES.nearbyAgencies.radiusKm,
+  const noneWithinRadius =
+    ranked[0].distanceKm > BUSINESS_RULES.nearbyAgencies.radiusKm;
+  const candidates = ranked.slice(
+    0,
+    BUSINESS_RULES.agencyRouting.candidateCount,
   );
-  const noneWithinRadius = withinRadius.length === 0;
-  const source = noneWithinRadius ? ranked : withinRadius;
 
-  return {
-    ok: true,
-    noneWithinRadius,
-    agencies: source.slice(0, BUSINESS_RULES.nearbyAgencies.maximumResults),
-  };
+  try {
+    const provider = createGoogleRoutesProvider({
+      apiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
+    });
+    const routeMetrics = sortRouteMetricsByDuration(
+      await provider.computeRouteMatrix(coordinates, candidates),
+    );
+    const candidateById = new Map(
+      candidates.map((agency) => [agency.id, agency]),
+    );
+    const agencies = routeMetrics
+      .map((metric) => {
+        const agency = candidateById.get(metric.destinationId);
+        if (!agency) return null;
+        return {
+          id: agency.id,
+          nome: agency.nome,
+          indirizzo: agency.indirizzo,
+          telefono: agency.telefono,
+          distanceKm: metric.distanceKm,
+          durationMin: metric.durationMin,
+          distanceKind: "route" as const,
+        };
+      })
+      .filter((agency) => agency !== null)
+      .slice(0, BUSINESS_RULES.nearbyAgencies.maximumResults);
+    if (
+      agencies.length !== BUSINESS_RULES.nearbyAgencies.maximumResults &&
+      candidates.length >= BUSINESS_RULES.nearbyAgencies.maximumResults
+    ) {
+      throw new Error("Google Routes: matrice incompleta");
+    }
+    return { ok: true, agencies, noneWithinRadius };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Google Routes: errore sconosciuto";
+    await reportExternalServiceError({
+      source: "Google Routes",
+      message,
+      practiceId,
+    });
+    return {
+      ok: true,
+      agencies: toFallback(candidates),
+      noneWithinRadius,
+    };
+  }
 }
