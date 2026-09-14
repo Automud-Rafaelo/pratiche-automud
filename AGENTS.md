@@ -358,7 +358,7 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 
 ## Stato di avanzamento
 
-Ultimo aggiornamento: 12 settembre 2026.
+Ultimo aggiornamento: 14 settembre 2026.
 
 Completato:
 
@@ -392,6 +392,7 @@ Completato:
 - eliminazione definitiva della pratica e dei dati collegati tramite conferma della targa;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
 - import Places in batch da venti con report create/aggiornate/disattivate/pending e causa degli errori;
+- branch della pull request riallineato a `main`, mantenendo il registro aggiornato di 109 agenzie come sorgente CSV;
 - test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, parser orari, provider Places/Routes e tempi schermata;
 - `.env.example` completo;
 - istruzioni locali, Supabase, import agenzie e Vercel aggiornate in `README.md`.
