@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { requireAdminSession } from "@/lib/admin/auth";
 import { formatDateTime } from "@/lib/admin/format";
 import type { AgencyRow } from "@/lib/admin/types";
@@ -52,6 +54,13 @@ export default async function ImportAgenciesPage({
     },
     { pending: 0, ok: 0, not_found: 0 },
   );
+  const withoutGoogleCount = agencies.filter(
+    (agency) => !agency.google_place_id,
+  ).length;
+  const showWithoutGoogle = query.filter === "without_google";
+  const visibleAgencies = showWithoutGoogle
+    ? agencies.filter((agency) => !agency.google_place_id)
+    : agencies;
 
   return (
     <>
@@ -88,6 +97,9 @@ export default async function ImportAgenciesPage({
           <p className="mt-1">
             Elaborate con Google Places {query.processed} di {query.pending_before}
             {" "}agenzie da completare.
+          </p>
+          <p className="mt-1">
+            Restano senza scheda Google: {query.without_google_after}.
           </p>
           {query.pending_after !== "0"
             ? " Premi di nuovo Importa per continuare dopo aver risolto gli eventuali errori mostrati."
@@ -135,6 +147,29 @@ export default async function ImportAgenciesPage({
         </p>
       ) : null}
 
+      <div className="mt-6 flex flex-wrap gap-2 text-sm">
+        <Link
+          className={`rounded-md border px-3 py-2 ${
+            showWithoutGoogle
+              ? "border-slate-300 bg-white"
+              : "border-slate-900 bg-slate-900 text-white"
+          }`}
+          href="/admin/import-agenzie"
+        >
+          Tutte ({agencies.length})
+        </Link>
+        <Link
+          className={`rounded-md border px-3 py-2 ${
+            showWithoutGoogle
+              ? "border-slate-900 bg-slate-900 text-white"
+              : "border-slate-300 bg-white"
+          }`}
+          href="/admin/import-agenzie?filter=without_google"
+        >
+          Senza scheda Google ({withoutGoogleCount})
+        </Link>
+      </div>
+
       <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-100 text-left">
@@ -143,7 +178,7 @@ export default async function ImportAgenciesPage({
               <th className="px-4 py-3">Contatti</th>
               <th className="px-4 py-3">Dati pagamento</th>
               <th className="px-4 py-3">Costi e requisiti</th>
-              <th className="px-4 py-3">Coordinate</th>
+              <th className="px-4 py-3">Coordinate e scheda Google</th>
               <th className="px-4 py-3">Import</th>
               <th className="px-4 py-3">Errore import</th>
               <th className="px-4 py-3">Orari aggiornati il</th>
@@ -152,7 +187,7 @@ export default async function ImportAgenciesPage({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {agencies.map((agency) => (
+            {visibleAgencies.map((agency) => (
               <tr key={agency.id}>
                 <td className="px-4 py-3">
                   <div className="font-medium">{agency.nome}</div>
@@ -176,9 +211,19 @@ export default async function ImportAgenciesPage({
                   <div>Istanza: {formatNullableBoolean(agency.istanza)}</div>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
-                  {agency.lat !== null && agency.lng !== null
-                    ? `${agency.lat}, ${agency.lng}`
-                    : "—"}
+                  <div>
+                    {agency.lat !== null && agency.lng !== null
+                      ? `${agency.lat}, ${agency.lng}`
+                      : "—"}
+                  </div>
+                  <div className="max-w-sm whitespace-normal text-slate-600">
+                    {agency.google_indirizzo ?? "Scheda Google assente"}
+                  </div>
+                  {agency.google_place_id ? (
+                    <div className="max-w-sm break-all font-mono text-xs text-slate-500">
+                      {agency.google_place_id}
+                    </div>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3">
                   {statusLabels[agency.import_status]}
@@ -217,10 +262,12 @@ export default async function ImportAgenciesPage({
                 </td>
               </tr>
             ))}
-            {agencies.length === 0 ? (
+            {visibleAgencies.length === 0 ? (
               <tr>
                 <td className="px-4 py-8 text-center text-slate-500" colSpan={10}>
-                  Nessuna agenzia importata.
+                  {showWithoutGoogle
+                    ? "Tutte le agenzie hanno una scheda Google."
+                    : "Nessuna agenzia importata."}
                 </td>
               </tr>
             ) : null}

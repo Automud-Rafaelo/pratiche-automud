@@ -41,12 +41,13 @@ Le migration in `supabase/migrations` vengono applicate in ordine:
 5. `20260905090000_customer_plate.sql` aggiunge la targa indicata dal cliente quando contesta quella dell'operatore.
 6. `20260909100000_places_and_practice_operations.sql` sostituisce il CAP cliente con le coordinate Places, aggiunge i dati strutturati del ritiro e rende eliminabili a cascata i dati collegati alla pratica.
 7. `20260912100000_agency_data_hours_routes.sql` aggiunge i dati amministrativi delle agenzie, la nuova chiave email+CAP, il timestamp degli orari e distanza/durata dell'agenzia scelta.
+8. `20260914150000_agency_google_place_backfill.sql` aggiunge l'indirizzo formattato della scheda Google associata all'agenzia.
 
 `npx supabase db push` applica soltanto le migration non ancora eseguite. Le tabelle hanno Row Level Security attiva e nessuna policy pubblica: il pannello usa la service role key esclusivamente lato server.
 
 ## Import delle agenzie
 
-Il pannello `/admin/import-agenzie` legge le 109 righe di `data/agenzie.csv`, riconcilia prima le righe esistenti tramite email+CAP (o nome+CAP come fallback), conserva le coordinate già presenti, disattiva le righe storiche assenti dal CSV e inserisce le nuove come `pending`. Le coordinate delle nuove righe arrivano da Places API (New), Text Search; i link brevi `share.google` non vengono usati. Ogni pressione elabora al massimo venti agenzie tramite Google, compreso il refresh degli orari assenti o più vecchi di sette giorni tramite Place Details (New). Gli errori, compresa un'API non abilitata o una chiave assente, restano visibili nella colonna dedicata e negli avvisi operatore.
+Il pannello `/admin/import-agenzie` legge le 109 righe di `data/agenzie.csv`, riconcilia prima le righe esistenti tramite email+CAP (o nome+CAP come fallback), disattiva le righe storiche assenti dal CSV e inserisce le nuove come `pending`. Ogni agenzia senza Place ID viene cercata con Places API (New), Text Search, anche quando possiede già coordinate: il risultato deve corrispondere a comune e CAP e salva identificativo e indirizzo Google. Le coordinate esistenti vengono conservate entro 300 metri dal risultato Google; oltre la soglia vengono corrette e segnalate agli operatori. I link brevi `share.google` non vengono usati. Ogni pressione elabora al massimo venti agenzie tramite Google, compreso il refresh degli orari assenti o più vecchi di sette giorni tramite Place Details (New). Gli errori, compresa un'API non abilitata o una chiave assente, restano visibili nella colonna dedicata e negli avvisi operatore; il filtro “Senza scheda Google” individua le righe ancora da correggere.
 
 Dopo il deploy applicare prima la migration più recente, quindi premere “Importa” finché il report indica zero elementi `pending`.
 

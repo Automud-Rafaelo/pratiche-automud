@@ -1,5 +1,6 @@
 import "server-only";
 
+import { ensureAgencyGooglePlace } from "@/lib/admin/agency-google-place";
 import type { AgencyRow } from "@/lib/admin/types";
 import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createGoogleAgencyOpeningHoursProvider } from "@/lib/google/agency-opening-hours";
@@ -35,23 +36,27 @@ export async function refreshAgencyOpeningHours(
     await report("Supabase", message, agencyId);
     return { ok: false, error: message, agency: null };
   }
-  const agency = data as AgencyRow | null;
+  let agency = data as AgencyRow | null;
   if (!agency) {
     return { ok: false, error: "Agenzia non trovata", agency: null };
   }
   if (!agency.google_place_id) {
-    return {
-      ok: false,
-      error: "Google Places: place ID assente",
-      agency,
-    };
+    const placeResult = await ensureAgencyGooglePlace(agency);
+    if (!placeResult.ok) return placeResult;
+    agency = placeResult.agency;
+  }
+  const googlePlaceId = agency.google_place_id;
+  if (!googlePlaceId) {
+    const message = "Google Places: place ID assente dopo la ricerca";
+    await report("Google Places", message, agencyId);
+    return { ok: false, error: message, agency };
   }
 
   try {
     const provider = createGoogleAgencyOpeningHoursProvider({
       apiKey: process.env.GOOGLE_MAPS_API_KEY ?? "",
     });
-    const details = await provider.getOpeningHours(agency.google_place_id);
+    const details = await provider.getOpeningHours(googlePlaceId);
     const updatedAt = new Date().toISOString();
     const hours = {
       regularOpeningHours: details.regularOpeningHours,

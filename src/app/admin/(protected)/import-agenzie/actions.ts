@@ -34,6 +34,7 @@ export async function importAgenciesAction() {
     processed: String(summary.processed),
     pending_before: String(summary.pendingBefore),
     pending_after: String(summary.pendingAfter),
+    without_google_after: String(summary.withoutGoogleAfter),
     missing_key: summary.missingApiKey ? "1" : "0",
   });
   redirect(`/admin/import-agenzie?${params.toString()}`);

@@ -14,17 +14,8 @@ import {
   parseNullableSiNo,
   type CsvAgency,
 } from "@/lib/domain/agency-import";
+import { reportExternalServiceError } from "@/lib/external-service-errors";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-
-type PlacesResult =
-  | {
-      status: "ok";
-      lat: number;
-      lng: number;
-      placeId: string;
-    }
-  | { status: "not_found" }
-  | { status: "retry"; error: string };
 
 export type ImportSummary = {
   csvRows: number;
@@ -34,6 +25,7 @@ export type ImportSummary = {
   processed: number;
   pendingBefore: number;
   pendingAfter: number;
+  withoutGoogleAfter: number;
   missingApiKey: boolean;
 };
 
@@ -44,85 +36,6 @@ async function readAgencyCsv(): Promise<CsvAgency[]> {
 
 function nullable(value: string) {
   return value || null;
-}
-
-async function searchPlace(
-  agency: Pick<
-    CsvAgency,
-    "nome" | "indirizzo" | "cap" | "comune" | "provincia"
-  >,
-  apiKey: string,
-): Promise<PlacesResult> {
-  const textQuery = [
-    agency.nome,
-    agency.indirizzo,
-    agency.cap,
-    agency.comune,
-    agency.provincia,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  try {
-    const response = await fetch(
-      "https://places.googleapis.com/v1/places:searchText",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask": "places.id,places.location",
-        },
-        body: JSON.stringify({
-          textQuery,
-          pageSize: 1,
-          languageCode: "it",
-          regionCode: "IT",
-        }),
-        cache: "no-store",
-      },
-    );
-
-    const payload = (await response.json()) as {
-      error?: { message?: string; status?: string };
-      places?: Array<{
-        id?: string;
-        location?: { latitude?: number; longitude?: number };
-      }>;
-    };
-    if (!response.ok) {
-      const reason =
-        payload.error?.message ||
-        payload.error?.status ||
-        `HTTP ${response.status}`;
-      return { status: "retry", error: `Google Places: ${reason}` };
-    }
-
-    const place = payload.places?.[0];
-    const latitude = place?.location?.latitude;
-    const longitude = place?.location?.longitude;
-    if (!place) return { status: "not_found" };
-    if (
-      !place.id ||
-      typeof latitude !== "number" ||
-      typeof longitude !== "number"
-    ) {
-      return {
-        status: "retry",
-        error: "Google Places: risultato senza coordinate o place ID",
-      };
-    }
-
-    return {
-      status: "ok",
-      lat: latitude,
-      lng: longitude,
-      placeId: place.id,
-    };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : "errore di rete";
-    return { status: "retry", error: `Google Places: ${reason}` };
-  }
 }
 
 export async function importAgencies(): Promise<ImportSummary> {
@@ -164,14 +77,12 @@ export async function importAgencies(): Promise<ImportSummary> {
     };
 
     if (match) {
-      const hasCoordinates = match.lat !== null && match.lng !== null;
       const { data, error } = await supabase
         .from("agenzie")
         .update({
           ...values,
-          ...(hasCoordinates
-            ? { import_status: "ok", import_error: null }
-            : {}),
+          import_status: match.google_place_id ? "ok" : "pending",
+          import_error: null,
         })
         .eq("id", match.id)
         .select("*")
@@ -234,22 +145,28 @@ export async function importAgencies(): Promise<ImportSummary> {
       throw new Error(`Unable to load pending agencies: ${error.message}`);
     }
     const agencies = (data ?? []) as AgencyRow[];
-    const coordinatePending = agencies.filter(
+    const googlePlacePending = agencies.filter(
       (agency) =>
-        agency.import_status === "pending" &&
-        (agency.lat === null || agency.lng === null),
+        !agency.google_place_id && agency.import_status !== "not_found",
     );
-    const coordinateIds = new Set(coordinatePending.map((agency) => agency.id));
+    const googlePlaceIds = new Set(
+      googlePlacePending.map((agency) => agency.id),
+    );
     const hoursPending = agencies.filter(
       (agency) =>
-        !coordinateIds.has(agency.id) &&
+        !googlePlaceIds.has(agency.id) &&
         Boolean(agency.google_place_id) &&
         (!agency.orari ||
           isAgencyOpeningHoursStale(agency.orari_aggiornati_at)),
     );
-    return [...coordinatePending, ...hoursPending];
+    return {
+      queue: [...googlePlacePending, ...hoursPending],
+      withoutGoogle: agencies.filter((agency) => !agency.google_place_id)
+        .length,
+    };
   };
-  const pending = await loadWorkQueue();
+  const initialWork = await loadWorkQueue();
+  const pending = initialWork.queue;
 
   const baseSummary = {
     csvRows: rows.length,
@@ -273,11 +190,17 @@ export async function importAgencies(): Promise<ImportSummary> {
       console.error(
         "[Google Places] API key missing; pending agencies not processed",
       );
+      await reportExternalServiceError({
+        source: "Google Places",
+        message: "Google Places: chiave assente",
+        context: { agenzie_da_elaborare: String(pending.length) },
+      });
     }
     return {
       ...baseSummary,
       processed: 0,
       pendingAfter: pending.length,
+      withoutGoogleAfter: initialWork.withoutGoogle,
       missingApiKey: pending.length > 0,
     };
   }
@@ -285,48 +208,17 @@ export async function importAgencies(): Promise<ImportSummary> {
   const batch = pending.slice(0, BUSINESS_RULES.agencyImport.placesBatchSize);
   await Promise.all(
     batch.map(async (agency) => {
-      let placeId = agency.google_place_id;
-      if (
-        agency.import_status === "pending" &&
-        (agency.lat === null || agency.lng === null)
-      ) {
-        const place = await searchPlace(agency, apiKey);
-        const update =
-          place.status === "ok"
-            ? {
-                lat: place.lat,
-                lng: place.lng,
-                google_place_id: place.placeId,
-                import_status: "ok",
-                import_error: null,
-              }
-            : place.status === "not_found"
-              ? { import_status: "not_found", import_error: null }
-              : { import_status: "pending", import_error: place.error };
-        if (place.status === "retry") {
-          console.error(`[Google Places] ${agency.nome}: ${place.error}`);
-        }
-        const { error } = await supabase
-          .from("agenzie")
-          .update(update)
-          .eq("id", agency.id);
-        if (error) {
-          throw new Error(`Unable to save Places result: ${error.message}`);
-        }
-        if (place.status !== "ok") return;
-        placeId = place.placeId;
-      }
-
-      if (placeId) await refreshAgencyOpeningHours(agency.id);
+      await refreshAgencyOpeningHours(agency.id);
     }),
   );
 
-  const pendingAfter = (await loadWorkQueue()).length;
+  const finalWork = await loadWorkQueue();
 
   return {
     ...baseSummary,
     processed: batch.length,
-    pendingAfter,
+    pendingAfter: finalWork.queue.length,
+    withoutGoogleAfter: finalWork.withoutGoogle,
     missingApiKey: false,
   };
 }

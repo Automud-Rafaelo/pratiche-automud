@@ -66,6 +66,7 @@ export type AgencyRow = {
   lng: number | null;
   maps_url: string | null;
   google_place_id: string | null;
+  google_indirizzo: string | null;
   orari: unknown | null;
   orari_aggiornati_at: string | null;
   iban: string | null;

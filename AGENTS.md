@@ -229,7 +229,8 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 - Prima dell'upsert riconciliare una tantum ogni riga con una riga esistente cercando email e CAP, oppure la sola email quando il CAP CSV è vuoto; se non c'è corrispondenza, cercare per nome e CAP normalizzati. Aggiornare la riga trovata conservandone coordinate, Place ID e orari.
 - Inserire le righe non riconciliate tramite upsert sulla nuova chiave e lasciarle `pending` senza coordinate.
 - Le righe esistenti assenti dal nuovo CSV non vengono eliminate: vengono rese inattive per conservare i riferimenti delle pratiche.
-- Per ogni riga `pending` senza coordinate, chiamare Google Places API (New), Text Search, con nome e indirizzo e salvare latitudine, longitudine e `google_place_id`.
+- Per ogni agenzia senza `google_place_id`, anche se possiede già coordinate ed è marcata `ok`, chiamare Google Places API (New), Text Search, con nome e indirizzo. Accettare soltanto un risultato il cui comune e CAP corrispondano ai dati importati; salvare `google_place_id`, `google_indirizzo` e quindi aggiornare gli orari tramite Place Details.
+- Se le coordinate Google distano al massimo 300 metri da quelle già salvate, conservare quelle esistenti. Oltre 300 metri sostituirle con quelle Google e creare un `operator_alert` “coordinate corrette dall'import” contenente coordinate precedenti e nuove.
 - Durante l'import, per ogni agenzia con `google_place_id` e orari assenti o più vecchi di sette giorni, richiamare Place Details (New) e salvare `regularOpeningHours`, `businessStatus` e l'istante di aggiornamento. Questo vale anche per le agenzie che possiedono già le coordinate.
 - Se nessun risultato è trovato, impostare `import_status = 'not_found'`.
 - Salvare ogni errore Places in `import_error`, includendo la causa restituita dall'API, e mostrarlo accanto allo stato.
@@ -237,7 +238,8 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 - Salvare ogni riga singolarmente, così un'importazione interrotta riprende dalle righe `pending`.
 - Se `GOOGLE_MAPS_API_KEY` manca, inserire o aggiornare le righe, mantenerle `pending` e mostrare un messaggio chiaro.
 - Un'agenzia è `attiva` soltanto quando ha un telefono e sia `delega` sia `istanza` sono esplicitamente `false`. Un valore `true` o `null` in uno dei due campi la mantiene inattiva.
-- La pagina mostra il riepilogo totale/ok/not found/pending, il report create/aggiornate/disattivate/pending e tutte le colonne del CSV, compreso l'IBAN riservato agli operatori. Mostra inoltre quando gli orari sono stati aggiornati e consente il refresh di una singola agenzia. Permette di attivare o disattivare le agenzie rispettando tutti i requisiti di attivazione. Mostrare `indirizzo` una sola volta, senza aggiungere nuovamente CAP e comune.
+- “Aggiorna orari” su un'agenzia senza Place ID esegue prima la stessa Text Search con verifica di comune e CAP. Se non trova una corrispondenza mostra “Agenzia non trovata su Google: correggi nome o indirizzo”.
+- La pagina mostra il riepilogo totale/ok/not found/pending, il report create/aggiornate/disattivate/pending con il numero di agenzie ancora senza scheda Google e tutte le colonne del CSV, compreso l'IBAN riservato agli operatori. Offre il filtro “Senza scheda Google”, mostra indirizzo e identificativo restituiti da Google, indica quando gli orari sono stati aggiornati e consente il refresh di una singola agenzia. Permette di attivare o disattivare le agenzie rispettando tutti i requisiti di attivazione. Mostrare `indirizzo` una sola volta, senza aggiungere nuovamente CAP e comune.
 
 ## Google Maps Platform
 
@@ -246,7 +248,7 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 - Ogni ricerca autocomplete usa un session token UUID generato dal server, riutilizzato durante la digitazione e passato a Place Details (New) alla selezione per chiudere la sessione.
 - Place Details (New) dell'autocomplete richiede soltanto `id`, `displayName`, `formattedAddress` e `location` tramite field mask.
 - Il refresh degli orari usa Place Details (New) con field mask `regularOpeningHours,businessStatus`, un timeout di cinque secondi e una cache applicativa di sette giorni.
-- Usare Places API (New), Text Search, soltanto durante l'import delle agenzie.
+- Usare Places API (New), Text Search, durante l'import delle agenzie e come recupero preliminare del Place ID quando l'operatore aggiorna manualmente gli orari. La field mask richiede ID, indirizzo formattato, coordinate e componenti dell'indirizzo necessari alla verifica comune/CAP.
 - Gli orari usano Place Details (New), richiesto come integrazione Place Details Pro, con la field mask minima indicata sopra.
 - Routes API usa una sola matrice per un'origine e fino a otto destinazioni, con `DRIVE`, `TRAFFIC_UNAWARE` e field mask `distanceMeters,duration`. Deve essere abilitata e inclusa nelle restrizioni della stessa chiave Google.
 - Haversine resta il calcolo locale per preselezione, avviso del raggio e fallback se Routes non è disponibile.
@@ -277,7 +279,7 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 - `iban`, `intestatario_iban`, `costi_pratica`: testo nullable importato dal CSV e visibile soltanto nel pannello.
 - `delega`, `istanza`: booleani nullable; il valore nullo significa sconosciuto.
 - `lat`, `lng`: numerici nullable, ottenuti da Places; quelli già presenti sulle righe riconciliate vengono conservati.
-- `maps_url`, `google_place_id`: testo nullable.
+- `maps_url`, `google_place_id`, `google_indirizzo`: testo nullable; `google_indirizzo` conserva l'indirizzo formattato della scheda selezionata tramite Places.
 - `orari`: JSONB nullable con `regularOpeningHours` e `businessStatus` ottenuti tramite Place Details e mostrati nel riepilogo finale e nel dettaglio pratica.
 - `orari_aggiornati_at`: timestamp nullable dell'ultimo refresh riuscito; gli orari scadono dopo sette giorni.
 - `attiva`: booleano, consentito soltanto con telefono presente, `delega = false` e `istanza = false`.
@@ -314,7 +316,8 @@ Prenotazioni del rate limit del proxy Places: `id`, `pratica_id` con cancellazio
 - autocomplete Places: minimo tre caratteri, debounce 300 ms, massimo 30 richieste al minuto e massimo cinque suggerimenti;
 - orari agenzia: TTL sette giorni, timeout cinque secondi, field mask Place Details e divisione delle fasce alle 13:00;
 - matrice Routes: numero di candidate, modalità di viaggio, preferenza, field mask, timeout e fallback Haversine;
-- normalizzazione della chiave di deduplicazione delle agenzie.
+- normalizzazione della chiave di deduplicazione delle agenzie;
+- ricerca della scheda Google: massimo cinque risultati, verifica comune/CAP e soglia di 300 metri per correggere le coordinate;
 - validazione completa di codice fiscale, IBAN e telefono, batch Places e formula di Haversine.
 
 ## Test manuale del flusso cliente
@@ -343,6 +346,7 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 20. completare scegliendo una preferenza e verificare nella pagina finale e nel pannello gli orari dell'agenzia, la separazione alle 13:00 e la fascia preferita evidenziata;
 21. verificare che le card agenzia mostrino tempo in auto e distanza stradale e che il pannello salvi i valori dell'agenzia scelta;
 22. rendere Routes API temporaneamente indisponibile e verificare le card “circa … km”, l'ordinamento Haversine e l'avviso operatore con la causa.
+23. filtrare le agenzie “Senza scheda Google”, avviare l'import e verificare che una riga con coordinate preesistenti ottenga Place ID, indirizzo Google e orari; controllare inoltre la conservazione entro 300 metri, la correzione oltre soglia con `operator_alert` e il messaggio operativo quando nessuna scheda corrisponde a comune e CAP.
 
 ## Variabili d'ambiente
 
@@ -366,7 +370,7 @@ Completato:
 - dipendenza `@supabase/supabase-js`;
 - specifica aggiornata al flusso cliente senza verifiche bloccanti;
 - regole di business centralizzate aggiornate;
-- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente, migration per `targa_cliente`, migration Places/ritiro/cascade e migration unica per dati agenzie, orari e metriche Routes;
+- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente, migration per `targa_cliente`, migration Places/ritiro/cascade, migration unica per dati agenzie/orari/metriche Routes e migration per l'indirizzo della scheda Google;
 - autenticazione admin con cookie firmato, scadenza a 12 ore e rate limit persistente per IP;
 - lista pratiche con filtro “Da verificare” e indicatori di attenzione;
 - creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
@@ -392,6 +396,7 @@ Completato:
 - eliminazione definitiva della pratica e dei dati collegati tramite conferma della targa;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
 - import Places in batch da venti con report create/aggiornate/disattivate/pending e causa degli errori;
+- recupero delle schede Google mancanti anche per agenzie già geolocalizzate, con match comune/CAP, soglia coordinate di 300 metri, filtro e conteggio operativo;
 - branch della pull request riallineato a `main`, mantenendo il registro aggiornato di 109 agenzie come sorgente CSV;
 - test automatici per navigazione, validazioni, importi, conferma targa, calendario, Haversine, parser orari, provider Places/Routes e tempi schermata;
 - `.env.example` completo;
