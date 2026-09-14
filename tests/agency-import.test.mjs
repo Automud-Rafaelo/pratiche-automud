@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { BUSINESS_RULES } from "../src/lib/config/business-rules.ts";
+import {
+  reconcileAgencyCoordinates,
+  selectMatchingAgencyPlace,
+} from "../src/lib/domain/agency-google-place.ts";
 import {
   findAgencyReconciliationMatch,
   isAgencyEligible,
@@ -64,4 +69,72 @@ test("requires phone, delega false and istanza false for activation", () => {
     isAgencyEligible({ telefono: "010123", delega: false, istanza: true }),
     false,
   );
+});
+
+test("matches a Google place only when municipality and postal code agree", () => {
+  const criteria = {
+    nome: "Agenzia Uno",
+    indirizzo: "Via Roma 1",
+    cap: "00100",
+    comune: "Roma",
+    provincia: "RM",
+  };
+  const component = (longText, types) => ({ longText, types });
+  const match = selectMatchingAgencyPlace(
+    [
+      {
+        id: "wrong-city",
+        formattedAddress: "Via Roma 1, 20100 Milano",
+        location: { latitude: 45.46, longitude: 9.19 },
+        addressComponents: [
+          component("20100", ["postal_code"]),
+          component("Milano", ["locality"]),
+        ],
+      },
+      {
+        id: "right-city",
+        formattedAddress: "Via Roma 1, 00100 Roma",
+        location: { latitude: 41.9, longitude: 12.49 },
+        addressComponents: [
+          component("00100", ["postal_code"]),
+          component("Roma", ["locality"]),
+        ],
+      },
+    ],
+    criteria,
+  );
+
+  assert.equal(match?.placeId, "right-city");
+});
+
+test("keeps stored coordinates when Google is within 300 metres", () => {
+  assert.equal(
+    BUSINESS_RULES.agencyImport.coordinateCorrectionThresholdKm,
+    0.3,
+  );
+  const result = reconcileAgencyCoordinates(
+    { lat: 0, lng: 0 },
+    { lat: 0.002, lng: 0 },
+  );
+
+  assert.equal(result.corrected, false);
+  assert.deepEqual(
+    { lat: result.lat, lng: result.lng },
+    { lat: 0, lng: 0 },
+  );
+  assert.ok(result.distanceKm !== null && result.distanceKm < 0.3);
+});
+
+test("uses Google coordinates and flags a correction beyond 300 metres", () => {
+  const result = reconcileAgencyCoordinates(
+    { lat: 0, lng: 0 },
+    { lat: 0.004, lng: 0 },
+  );
+
+  assert.equal(result.corrected, true);
+  assert.deepEqual(
+    { lat: result.lat, lng: result.lng },
+    { lat: 0.004, lng: 0 },
+  );
+  assert.ok(result.distanceKm !== null && result.distanceKm > 0.3);
 });

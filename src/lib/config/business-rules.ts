@@ -71,6 +71,16 @@ export const BUSINESS_RULES = {
       istanza: false,
     },
     placesBatchSize: 20,
+    placeSearchMaximumResults: 5,
+    placeSearchFieldMask:
+      "places.id,places.formattedAddress,places.location,places.addressComponents",
+    coordinateCorrectionThresholdKm: 0.3,
+    postalCodeComponentTypes: ["postal_code"],
+    municipalityComponentTypes: [
+      "locality",
+      "postal_town",
+      "administrative_area_level_3",
+    ],
   },
   agencyOpeningHours: {
     ttlDays: 7,
