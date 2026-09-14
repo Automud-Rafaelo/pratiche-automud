@@ -4,6 +4,7 @@ import type {
   PracticeStatus,
   PracticeType,
 } from "@/lib/config/business-rules";
+import type { StoredAgencyProposal } from "@/lib/domain/agency-routing";
 
 export type PracticeRow = {
   id: string;
@@ -31,6 +32,7 @@ export type PracticeRow = {
   agenzia_id: string | null;
   agenzia_distanza_km: number | null;
   agenzia_durata_min: number | null;
+  agenzie_proposte: StoredAgencyProposal[] | null;
   preferenza_data: string | null;
   preferenza_fascia: AppointmentSlot | null;
   conosce_orari_proprietario: boolean | null;

@@ -41,7 +41,8 @@ export const BUSINESS_RULES = {
     candidateCount: 8,
     travelMode: "DRIVE",
     routingPreference: "TRAFFIC_UNAWARE",
-    fieldMask: "distanceMeters,duration",
+    fieldMask:
+      "originIndex,destinationIndex,status,condition,distanceMeters,duration",
     fallback: "haversine",
     timeoutMs: 5_000,
   },

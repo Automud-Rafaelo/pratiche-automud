@@ -10,14 +10,34 @@ export type RouteMetric = {
   durationMin: number;
 };
 
+export type RouteMatrixLogElement = {
+  originIndex: number | null;
+  destinationIndex: number | null;
+  distanceMeters: number | null;
+  duration: string | null;
+};
+
+export type RouteMatrixResult = {
+  metrics: RouteMetric[];
+  rawElements: RouteMatrixLogElement[];
+};
+
 export type RoutesProvider = {
   computeRouteMatrix(
     origin: RouteCoordinates,
     destinations: readonly RouteDestination[],
-  ): Promise<RouteMetric[]>;
+  ): Promise<RouteMatrixResult>;
 };
 
 type FetchLike = typeof fetch;
+type RouteMatrixElement = {
+  originIndex?: number;
+  destinationIndex?: number;
+  status?: unknown;
+  condition?: string;
+  distanceMeters?: number;
+  duration?: string;
+};
 
 export class RoutesApiError extends Error {
   constructor(message: string) {
@@ -28,7 +48,10 @@ export class RoutesApiError extends Error {
 
 export function sortRouteMetricsByDuration(metrics: readonly RouteMetric[]) {
   return [...metrics].sort(
-    (left, right) => left.durationMin - right.durationMin,
+    (left, right) =>
+      left.durationMin - right.durationMin ||
+      left.distanceKm - right.distanceKm ||
+      left.destinationId.localeCompare(right.destinationId),
   );
 }
 
@@ -61,7 +84,9 @@ export function createGoogleRoutesProvider({
 
   return {
     async computeRouteMatrix(origin, destinations) {
-      if (destinations.length === 0) return [];
+      if (destinations.length === 0) {
+        return { metrics: [], rawElements: [] };
+      }
       let response: Response;
       try {
         response = await fetchImpl(
@@ -91,7 +116,7 @@ export function createGoogleRoutesProvider({
         throw new RoutesApiError(`Google Routes: ${reason}`);
       }
       const payload = (await response.json()) as
-        | Array<{ distanceMeters?: number; duration?: string }>
+        | RouteMatrixElement[]
         | { error?: { message?: string; status?: string } };
       if (!response.ok || !Array.isArray(payload)) {
         const reason =
@@ -100,27 +125,61 @@ export function createGoogleRoutesProvider({
           `HTTP ${response.status}`;
         throw new RoutesApiError(`Google Routes: ${reason}`);
       }
-      if (payload.length !== destinations.length) {
-        throw new RoutesApiError("Google Routes: matrice incompleta");
-      }
+      const rawElements = payload.map<RouteMatrixLogElement>((element) => ({
+        originIndex:
+          typeof element.originIndex === "number" ? element.originIndex : null,
+        destinationIndex:
+          typeof element.destinationIndex === "number"
+            ? element.destinationIndex
+            : null,
+        distanceMeters:
+          typeof element.distanceMeters === "number"
+            ? element.distanceMeters
+            : null,
+        duration: typeof element.duration === "string" ? element.duration : null,
+      }));
+      const metricByDestinationIndex = new Map<number, RouteMetric>();
 
-      return payload.map((element, index) => {
+      for (const element of payload) {
+        if (
+          element.condition !== "ROUTE_EXISTS" ||
+          element.originIndex !== 0 ||
+          !Number.isInteger(element.destinationIndex) ||
+          (element.destinationIndex as number) < 0 ||
+          (element.destinationIndex as number) >= destinations.length
+        ) {
+          continue;
+        }
+        const destinationIndex = element.destinationIndex as number;
         const durationMin = parseDurationMinutes(element.duration);
         if (
           typeof element.distanceMeters !== "number" ||
           !Number.isFinite(element.distanceMeters) ||
           durationMin === null
         ) {
-          throw new RoutesApiError(
-            "Google Routes: destinazione senza distanza o durata",
-          );
+          continue;
         }
-        return {
-          destinationId: destinations[index].id,
+        const metric = {
+          destinationId: destinations[destinationIndex].id,
           distanceKm: element.distanceMeters / 1000,
           durationMin,
         };
-      });
+        const current = metricByDestinationIndex.get(destinationIndex);
+        if (
+          !current ||
+          sortRouteMetricsByDuration([metric, current])[0] === metric
+        ) {
+          metricByDestinationIndex.set(destinationIndex, metric);
+        }
+      }
+
+      return {
+        metrics: destinations.flatMap((_, index) => {
+          const metric = metricByDestinationIndex.get(index);
+          return metric ? [metric] : [];
+        }),
+        rawElements,
+      };
     },
   };
 }
