@@ -13,7 +13,7 @@ import {
   normalizeUppercaseValue,
   normalizeVehiclePlate,
 } from "@/lib/config/business-rules";
-import { findNearbyAgencies } from "@/lib/customer/agencies";
+import { loadOrCreateNearbyAgencies } from "@/lib/customer/agencies";
 import {
   loadCustomerPractice,
   recordCustomerEvent,
@@ -291,6 +291,7 @@ export async function saveAgencyLocationAction(formData: FormData) {
     agenzia_id: null,
     agenzia_distanza_km: null,
     agenzia_durata_min: null,
+    agenzie_proposte: null,
   });
   await recordCustomerEvent(practice.id, "dato_cliente_aggiornato", {
     campo: "ricerca_indirizzo",
@@ -361,10 +362,14 @@ export async function saveAgencyAction(formData: FormData) {
     invalidAction(token, "agency");
   }
 
-  const result = await findNearbyAgencies(practice.id, {
-    lat: practice.ricerca_lat,
-    lng: practice.ricerca_lng,
-  });
+  const result = await loadOrCreateNearbyAgencies(
+    practice.id,
+    {
+      lat: practice.ricerca_lat,
+      lng: practice.ricerca_lng,
+    },
+    practice.agenzie_proposte,
+  );
   if (!result.ok) {
     await recordCustomerEvent(practice.id, "ricerca_agenzie_fallita", {
       indirizzo: practice.ricerca_indirizzo,
@@ -373,17 +378,17 @@ export async function saveAgencyAction(formData: FormData) {
     revalidatePath(`/p/${token}`);
     redirect(`/p/${token}?view=agency_fallback#top`);
   }
-  const selectedAgency = result.agencies.find(
-    (agency) => agency.id === agencyId,
+  const selectedProposal = result.proposals.find(
+    (proposal) => proposal.id === agencyId,
   );
-  if (!selectedAgency) {
+  if (!selectedProposal) {
     invalidAction(token, "agency");
   }
 
   await updateCustomerPractice(practice.id, {
     agenzia_id: agencyId,
-    agenzia_distanza_km: Number(selectedAgency.distanceKm.toFixed(2)),
-    agenzia_durata_min: selectedAgency.durationMin,
+    agenzia_distanza_km: selectedProposal.distanza_km,
+    agenzia_durata_min: selectedProposal.durata_min,
     status: "step3_appuntamento",
   });
   await recordCustomerEvent(practice.id, "agenzia_scelta");

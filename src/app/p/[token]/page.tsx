@@ -20,7 +20,7 @@ import {
 } from "@/lib/config/business-rules";
 import { customerCopy } from "@/lib/copy/customer";
 import { isAgencyOpeningHoursStale } from "@/lib/domain/agency-opening-hours";
-import { findNearbyAgencies } from "@/lib/customer/agencies";
+import { loadOrCreateNearbyAgencies } from "@/lib/customer/agencies";
 import {
   loadCustomerPractice,
   recordCustomerEvent,
@@ -559,10 +559,14 @@ export default async function CustomerPage({
   if (screen === "agency") {
     const nearby =
       practice.ricerca_lat !== null && practice.ricerca_lng !== null
-        ? await findNearbyAgencies(practice.id, {
-            lat: practice.ricerca_lat,
-            lng: practice.ricerca_lng,
-          })
+        ? await loadOrCreateNearbyAgencies(
+            practice.id,
+            {
+              lat: practice.ricerca_lat,
+              lng: practice.ricerca_lng,
+            },
+            practice.agenzie_proposte,
+          )
         : {
             ok: false as const,
             error: "Coordinate della posizione di ricerca assenti",
