@@ -1,17 +1,17 @@
+import { randomBytes } from "node:crypto";
+
 import Link from "next/link";
 
 import { CopyLinkButton } from "@/components/admin/copy-link-button";
+import { NewPracticeForm } from "@/components/admin/new-practice-form";
 import { requireAdminSession } from "@/lib/admin/auth";
 import { buildCustomerLink } from "@/lib/admin/format";
+import { BUSINESS_RULES } from "@/lib/config/business-rules";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
-
-import { createPracticeAction } from "./actions";
 
 type NewPracticePageProps = {
   searchParams: Promise<{
     created?: string;
-    error?: string;
-    cause?: string;
     warning?: string;
   }>;
 };
@@ -20,7 +20,10 @@ export default async function NewPracticePage({
   searchParams,
 }: NewPracticePageProps) {
   await requireAdminSession();
-  const { created, error, cause, warning } = await searchParams;
+  const { created, warning } = await searchParams;
+  const creationToken = randomBytes(
+    BUSINESS_RULES.practiceCreation.idempotencyTokenBytes,
+  ).toString("base64url");
   let createdPractice: { id: string; token: string } | null = null;
   let loadError: string | null = null;
 
@@ -82,72 +85,7 @@ export default async function NewPracticePage({
         </p>
       ) : null}
 
-      {error === "invalid" ? (
-        <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          Controlla i campi inseriti e riprova.
-        </p>
-      ) : null}
-
-      {error === "service" ? (
-        <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
-          Operazione non riuscita. Causa: {cause ?? "errore sconosciuto"}
-        </p>
-      ) : null}
-
-      <form action={createPracticeAction} className="mt-6 space-y-5 rounded-lg border bg-white p-5">
-        <label className="block text-sm font-medium">
-          Tipo pratica
-          <select
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
-            name="tipo_pratica"
-            required
-          >
-            <option value="dini">Dini</option>
-            <option value="atto_demo">Atto demo</option>
-          </select>
-        </label>
-        <label className="block text-sm font-medium">
-          Prezzo concordato
-          <input
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
-            min="0"
-            name="prezzo_concordato"
-            required
-            step="0.01"
-            type="number"
-          />
-        </label>
-        <label className="block text-sm font-medium">
-          Targa
-          <input
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 uppercase"
-            name="targa"
-            required
-          />
-        </label>
-        <label className="block text-sm font-medium">
-          Marca
-          <input
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
-            name="marca"
-            required
-          />
-        </label>
-        <label className="block text-sm font-medium">
-          Modello
-          <input
-            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2"
-            name="modello"
-            required
-          />
-        </label>
-        <button
-          className="rounded-md bg-slate-900 px-4 py-2 font-medium text-white"
-          type="submit"
-        >
-          Crea pratica
-        </button>
-      </form>
+      <NewPracticeForm creationToken={creationToken} />
     </div>
   );
 }

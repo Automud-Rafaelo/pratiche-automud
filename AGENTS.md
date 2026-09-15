@@ -202,7 +202,11 @@ Lista delle pratiche dalla più recente con targa, marca/modello, nome e cognome
 
 ### `/admin/pratiche/nuova`
 
-Form con `tipo_pratica`, `prezzo_concordato`, `targa`, `marca` e `modello`. Normalizza la targa e segnala senza bloccare un formato diverso da `AA123AA`. Normalizza marca e modello con l'iniziale maiuscola di ogni parola, per esempio `audi a3` diventa `Audi A3`. Al salvataggio genera il token e mostra il link completo `/p/[token]`, costruito usando `NEXT_PUBLIC_APP_URL`, con un bottone “Copia link”.
+Form con `tipo_pratica`, `prezzo_concordato`, `targa`, `marca` e `modello`. Normalizza la targa e segnala senza bloccare un formato diverso da `AA123AA`. Normalizza marca e modello con l'iniziale maiuscola di ogni parola, per esempio `audi a3` diventa `Audi A3`.
+
+Al caricamento genera un token casuale di idempotenza e lo include nel form come campo nascosto. Il bottone viene disabilitato al primo invio e mostra “Creazione in corso…”. Il server associa il token a `pratiche.creazione_token`: se lo stesso invio viene ripetuto, non inserisce una nuova riga e apre il dettaglio della pratica già creata. Prima della creazione cerca inoltre una pratica con la stessa targa nelle ultime 24 ore; se esiste, mostra un avviso non bloccante con link alla pratica e richiede una conferma esplicita prima di procedere.
+
+Al salvataggio genera il token cliente e mostra il link completo `/p/[token]`, costruito usando `NEXT_PUBLIC_APP_URL`, con un bottone “Copia link”.
 
 ### `/admin/pratiche/[id]`
 
@@ -218,7 +222,7 @@ Mostra:
 - blocco degli orari dell'agenzia relativo alla data e fascia preferite dal cliente;
 - note operatore modificabili;
 - log eventi in ordine cronologico inverso.
-- tabella “Tempo per schermata” con ogni completamento, incluse le ripetizioni dovute alla navigazione indietro, durata in secondi e totale.
+- tabella “Tempo per schermata” con il nome italiano della schermata effettivamente completata, durata aggregata in secondi, numero di passaggi quando una schermata è stata ripetuta e totale complessivo.
 - eliminazione definitiva della pratica dopo conferma tramite digitazione della targa; tutte le righe collegate vengono cancellate a cascata e il token cliente non è più valido.
 
 Ogni salvataggio dell'operatore genera un evento.
@@ -261,6 +265,7 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 
 - `id`: UUID, chiave primaria.
 - `token`: testo univoco, casuale, URL-safe, almeno 32 caratteri.
+- `creazione_token`: testo univoco nullable per le righe storiche; rende idempotente l'invio del form admin di creazione.
 - `created_at`, `updated_at`: timestamp; `updated_at` viene aggiornato tramite trigger.
 - `status`: uno degli stati definiti sopra.
 - `tipo_pratica`: `dini` oppure `atto_demo`, inserito dall'operatore.
@@ -292,7 +297,7 @@ Legge `data/agenzie.csv`, composto da 109 righe con le colonne `nome`, `email`, 
 
 Log di debug e amministrazione: `id`, `pratica_id`, `created_at`, `tipo` e `dettaglio` JSONB. Gli eventi vengono eliminati a cascata se viene eliminata la pratica.
 
-Quando il server serve una schermata cliente registra `schermata_visualizzata`. Dopo ogni salvataggio registra `schermata_completata` con `{ schermata, durata_ms }`, calcolando la durata dall'ultima visualizzazione della stessa schermata. Le schermate ripetute producono righe distinte. Ogni matrice Routes riuscita registra `routes_matrix_response` con i soli indici, durata e distanza della risposta. Il log admin mostra data e ora fino ai secondi e una tabella riepiloga le singole durate e il totale.
+Quando il server serve una schermata cliente registra `schermata_visualizzata`. Dopo ogni salvataggio registra `schermata_completata` con `{ schermata, durata_ms }`: `schermata` è sempre l'identificatore della schermata appena completata e la durata è calcolata dall'ultima visualizzazione della stessa schermata. Le ripetizioni producono eventi distinti; nel pannello vengono raggruppate per schermata, mostrate con un'etichetta italiana, il numero di passaggi, la durata aggregata e il totale complessivo. Ogni matrice Routes riuscita registra `routes_matrix_response` con i soli indici, durata e distanza della risposta. Il log admin mostra data e ora fino ai secondi.
 
 Eventi da evidenziare nella lista admin: `targa_contestata`, `nessuna_agenzia_nel_raggio`, `ricerca_agenzie_fallita` ed errori dei servizi esterni.
 
@@ -315,6 +320,7 @@ Prenotazioni del rate limit del proxy Places: `id`, `pratica_id` con cancellazio
 - raggio Haversine di 25 km, otto candidate Routes, massimo quattro risultati, associazione tramite indice, ordinamento deterministico durata/distanza/ID, persistenza delle proposte e fallback Haversine;
 - calendario a tre giorni, esclusione domenica, sabato solo mattina, soglie 12:00 e 18:00 e fuso `Europe/Rome`;
 - durata e rate limit della sessione admin;
+- creazione pratica: token di idempotenza casuale e finestra di 24 ore per l'avviso di targa duplicata;
 - autocomplete Places: minimo tre caratteri, debounce 300 ms, massimo 30 richieste al minuto e massimo cinque suggerimenti;
 - orari agenzia: TTL sette giorni, timeout cinque secondi, field mask Place Details e divisione delle fasce alle 13:00;
 - matrice Routes: numero di candidate, modalità di viaggio, preferenza, field mask, timeout e fallback Haversine;
@@ -339,7 +345,7 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 11. verificare il fallback “Non la trovo, scrivo l'indirizzo a mano” e il fallback manuale quando Places non è disponibile;
 12. contestare la targa, inserire quella del libretto e verificare normalizzazione, avviso non bloccante ed evento con entrambe le targhe;
 13. modificare il prezzo dal pannello, riaprire la schermata iniziale cliente e verificare che mostri subito il valore corrente e l'evento `prezzo_modificato`;
-14. verificare nel pannello la tabella dei tempi, includendo le schermate ripetute tornando indietro, e i timestamp del log fino ai secondi;
+14. completare almeno tre schermate diverse, ripeterne una tornando indietro e verificare nel pannello etichette italiane corrette, numero di passaggi, durate aggregate, totale e timestamp del log fino ai secondi;
 15. eliminare una pratica digitando la targa, quindi verificare che scompaiano dati collegati e avvisi e che il link cliente mostri la pagina di link non valido;
 16. controllare nel pannello admin che tutti i dati e gli eventi siano corretti e che le targhe operatore/cliente siano evidenti.
 17. importare il nuovo CSV da 109 righe, rilanciare l'import e verificare che non compaiano doppioni, che le righe assenti vengano disattivate e che il report mostri create/aggiornate/disattivate/pending;
@@ -349,6 +355,7 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 21. verificare che le card agenzia mostrino tempo in auto e distanza stradale; ricaricare due volte dalla stessa posizione e controllare che le stesse quattro agenzie restino nello stesso ordine con le stesse metriche, quindi selezionarne una dopo il ricaricamento e verificare che il pannello salvi i valori mostrati e che il log contenga `routes_matrix_response`;
 22. rendere Routes API temporaneamente indisponibile e verificare le card “circa … km”, l'ordinamento Haversine e l'avviso operatore con la causa.
 23. filtrare le agenzie “Senza scheda Google”, avviare l'import e verificare che una riga con coordinate preesistenti ottenga Place ID, indirizzo Google e orari; controllare inoltre la conservazione entro 300 metri, la correzione oltre soglia con `operator_alert` e il messaggio operativo quando nessuna scheda corrisponde a comune e CAP.
+24. fare doppio clic su “Crea pratica” e ricaricare dopo l'invio, verificando che venga creata una sola pratica; creare poi una nuova pratica con la stessa targa entro 24 ore e verificare avviso, link e conferma esplicita.
 
 ## Variabili d'ambiente
 
@@ -364,7 +371,7 @@ Dopo ogni task che modifica `/p/`, eseguire da smartphone questa checklist:
 
 ## Stato di avanzamento
 
-Ultimo aggiornamento: 14 settembre 2026.
+Ultimo aggiornamento: 15 settembre 2026.
 
 Completato:
 
@@ -372,10 +379,10 @@ Completato:
 - dipendenza `@supabase/supabase-js`;
 - specifica aggiornata al flusso cliente senza verifiche bloccanti;
 - regole di business centralizzate aggiornate;
-- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente, migration per `targa_cliente`, migration Places/ritiro/cascade, migration unica per dati agenzie/orari/metriche Routes, migration per l'indirizzo della scheda Google e migration per le proposte agenzie persistite;
+- migration iniziale, migration del flusso operatore, migration di supporto admin, migration del flusso cliente, migration per `targa_cliente`, migration Places/ritiro/cascade, migration unica per dati agenzie/orari/metriche Routes, migration per l'indirizzo della scheda Google, migration per le proposte agenzie persistite e migration per l'idempotenza della creazione pratica;
 - autenticazione admin con cookie firmato, scadenza a 12 ore e rate limit persistente per IP;
 - lista pratiche con filtro “Da verificare” e indicatori di attenzione;
-- creazione pratiche con normalizzazione targa, avviso non bloccante e link cliente copiabile;
+- creazione pratiche idempotente anche in caso di doppio invio, con bottone in stato pendente, avviso e conferma per targhe duplicate nelle ultime 24 ore, normalizzazione targa e link cliente copiabile;
 - dettaglio pratica con dati cliente, verifiche a tre stati, appuntamento confermato, note e log eventi;
 - import idempotente del CSV da 109 agenzie con riconciliazione delle righe storiche, deduplicazione email+CAP, disattivazione delle righe assenti e vincoli su telefono/delega/istanza;
 - accesso admin a Supabase esclusivamente server-side tramite service role;
@@ -393,7 +400,7 @@ Completato:
 - pagina finale adattata a preferenza, chiavi, luogo di ritiro, telefono e agenzia scelta;
 - refresh e visualizzazione degli orari dell'agenzia nella pagina finale e nel pannello, con cache di sette giorni e fallback telefonico;
 - selezione agenzie tramite matrice Routes sulle otto candidate Haversine, associazione per `destinationIndex`, ordinamento deterministico, proposte persistite, distanza/durata copiate senza ricalcolo e fallback locale per singolo elemento;
-- tempi di completamento delle singole schermate, incluse ripetizioni, riepilogati nel pannello;
+- tempi di completamento associati alla schermata effettiva, con etichette italiane e ripetizioni raggruppate nel pannello;
 - modifica del prezzo concordato con storico evento e lettura dinamica nel flusso cliente;
 - eliminazione definitiva della pratica e dei dati collegati tramite conferma della targa;
 - gestione visibile degli errori esterni tramite avvisi operatore e `agenzie.import_error`;
@@ -410,7 +417,7 @@ Non ancora implementato:
 
 ## Domande aperte
 
-- La documentazione Google corrente classifica `regularOpeningHours` nella SKU Place Details Enterprise, non Pro: confermare che costi e restrizioni del progetto Google Cloud siano compatibili prima del test in produzione.
+Nessuna.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

@@ -16,7 +16,7 @@ import {
 } from "@/lib/admin/format";
 import type { AgencyRow, EventRow, PracticeRow } from "@/lib/admin/types";
 import { VERIFICATION_FIELDS } from "@/lib/config/business-rules";
-import { listScreenTimings } from "@/lib/customer/screen-timing";
+import { groupScreenTimings } from "@/lib/customer/screen-timing";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 
 import {
@@ -152,9 +152,9 @@ export default async function PracticeDetailPage({
   const highlightedEvents = events.filter(
     (event) => highlightedEventLabels[event.tipo],
   );
-  const screenTimings = listScreenTimings(events);
+  const screenTimings = groupScreenTimings(events);
   const totalScreenTimeMs = screenTimings.reduce(
-    (total, timing) => total + timing.durationMs,
+    (total, timing) => total + timing.totalDurationMs,
     0,
   );
 
@@ -459,10 +459,17 @@ export default async function PracticeDetailPage({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {screenTimings.map((timing) => (
-                <tr key={timing.eventId}>
-                  <td className="py-2 pr-4">{timing.screen}</td>
+                <tr key={timing.screen}>
+                  <td className="py-2 pr-4">
+                    {timing.label}
+                    <span className="text-slate-500">
+                      {" "}
+                      · {timing.passCount}{" "}
+                      {timing.passCount === 1 ? "passaggio" : "passaggi"}
+                    </span>
+                  </td>
                   <td className="py-2 text-right">
-                    {(timing.durationMs / 1000).toFixed(1)} s
+                    {(timing.totalDurationMs / 1000).toFixed(1)} s
                   </td>
                 </tr>
               ))}
