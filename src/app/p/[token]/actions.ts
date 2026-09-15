@@ -30,7 +30,7 @@ import {
   type CustomerScreenId,
 } from "@/lib/customer/navigation";
 import { verifyPlaceSelectionProof } from "@/lib/customer/place-selection";
-import { calculateScreenDurationMs } from "@/lib/customer/screen-timing";
+import { createScreenCompletionDetail } from "@/lib/customer/screen-timing";
 
 async function getActionContext(formData: FormData, expected: CustomerScreenId) {
   const token = formData.get("token");
@@ -62,12 +62,14 @@ async function finishAction(
   screen: CustomerScreenId,
   navigation: CustomerNavigationContext,
 ): Promise<never> {
+  const completedAt = Date.now();
   const context = await loadCustomerPractice(token);
   if (context) {
-    await recordCustomerEvent(context.practice.id, "schermata_completata", {
-      schermata: screen,
-      durata_ms: calculateScreenDurationMs(context.events, screen),
-    });
+    await recordCustomerEvent(
+      context.practice.id,
+      "schermata_completata",
+      createScreenCompletionDetail(context.events, screen, completedAt),
+    );
   }
   revalidatePath(`/p/${token}`);
   const nextScreen = getNextCustomerScreen(screen, navigation);

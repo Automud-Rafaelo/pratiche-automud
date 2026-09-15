@@ -9,6 +9,7 @@ import type { StoredAgencyProposal } from "@/lib/domain/agency-routing";
 export type PracticeRow = {
   id: string;
   token: string;
+  creazione_token: string | null;
   created_at: string;
   updated_at: string;
   status: PracticeStatus;

@@ -64,6 +64,10 @@ export const BUSINESS_RULES = {
       windowMinutes: 15,
     },
   },
+  practiceCreation: {
+    idempotencyTokenBytes: 32,
+    recentDuplicateHours: 24,
+  },
   agencyImport: {
     deduplicationFields: ["email_normalizzata", "cap_normalizzato"],
     activeRequirements: {
